@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ mes_nombre }} {{ anio }} — Remates</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            font-size: 11pt;
+            color: #212529;
+            background: #fff;
+            padding: 20px;
+        }
+        h1 { font-size: 18pt; color: #198754; margin-bottom: 4px; }
+        .subtitle { font-size: 9pt; color: #6c757d; margin-bottom: 20px; }
+
+        .remate-block {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+        .remate-block h2 {
+            font-size: 12pt;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: #212529;
+        }
+        .remate-block .meta {
+            font-size: 9pt;
+            color: #495057;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 6px;
+        }
+        .remate-block .meta span::before { content: '• '; color: #198754; }
+        .badge {
+            display: inline-block;
+            font-size: 8pt;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+        .badge-programado  { background:#cfe2ff; color:#084298; }
+        .badge-en_progreso { background:#ffe5d0; color:#7a3600; }
+        .badge-finalizado  { background:#d1e7dd; color:#0a3622; }
+        .badge-cancelado   { background:#e2e3e5; color:#41464b; }
+
+        .checklist { display: flex; gap: 16px; margin-top: 6px; font-size: 9pt; color: #6c757d; }
+        .check-item { display: flex; align-items: center; gap: 4px; }
+        .check-box { width: 12px; height: 12px; border: 1.5px solid #adb5bd; border-radius: 3px; display: inline-block; }
+        .check-box.done { background: #198754; border-color: #198754; }
+
+        .notas { font-size: 9pt; color: #6c757d; margin-top: 6px; white-space: pre-line; }
+
+        .empty { text-align: center; color: #adb5bd; padding: 40px; }
+
+        @media print {
+            body { padding: 0; }
+            @page { margin: 15mm; }
+            .no-print { display: none !important; }
+        }
+
+        .print-btn {
+            position: fixed; top: 16px; right: 16px;
+            background: #198754; color: #fff;
+            border: none; border-radius: 10px;
+            padding: 8px 18px; font-size: 10pt;
+            cursor: pointer; font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+<button onclick="window.print()" class="print-btn no-print">🖨️ Imprimir</button>
+
+<h1>{{ mes_nombre }} {{ anio }}</h1>
+<div class="subtitle">Remates · Generado el {% set now = None %}{{ mes_nombre }} {{ anio }}</div>
+
+{% if remates %}
+{% for r in remates %}
+<div class="remate-block">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <h2>{{ r.titulo }}</h2>
+        <span class="badge badge-{{ r.estado }}">{{ STATUS_LABELS[r.estado] }}</span>
+    </div>
+
+    <div class="meta">
+        {% if r.fecha_remate %}
+        <span>{{ r.fecha_remate[:10] }}{% if r.fecha_remate|length > 10 and 'T' in r.fecha_remate %} {{ r.fecha_remate[11:16] }}h{% endif %}</span>
+        {% endif %}
+        {% if r.lugar or r.ciudad %}
+        <span>{{ [r.lugar, r.ciudad] | select | join(', ') }}</span>
+        {% endif %}
+        {% if r.establecimiento %}
+        <span>{{ r.establecimiento }}</span>
+        {% endif %}
+        {% if r.cantidad_lotes %}
+        <span>{{ r.cantidad_lotes }} lotes</span>
+        {% endif %}
+        {% set cat = r.categoria if r.categoria in CATEGORIAS else 'otro' %}
+        <span>{{ CATEGORIAS[cat].label }}</span>
+    </div>
+
+    {% if r.transmision_nombre %}
+    <div style="font-size:9pt; margin-top:4px;">
+        📡 <strong>Transmisión:</strong> {{ r.transmision_nombre }}
+        {% if r.transmision_plataforma %} ({{ r.transmision_plataforma }}){% endif %}
+    </div>
+    {% endif %}
+
+    {% if r.fecha_fotos or r.fecha_videos %}
+    <div style="font-size:9pt; margin-top:4px; color:#6c757d;">
+        {% if r.fecha_fotos %}📷 Fotos: {{ r.fecha_fotos[:10] }}{% if r.responsable_fotos %} — {{ r.responsable_fotos }}{% endif %}{% endif %}
+        {% if r.fecha_videos %}  🎥 Videos: {{ r.fecha_videos[:10] }}{% if r.responsable_videos %} — {{ r.responsable_videos }}{% endif %}{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="checklist">
+        <div class="check-item">
+            <span class="check-box {{ 'done' if r.transmision_configurada else '' }}"></span> Transmisión
+        </div>
+        <div class="check-item">
+            <span class="check-box {{ 'done' if r.catalogo_listo else '' }}"></span> Catálogo
+        </div>
+        <div class="check-item">
+            <span class="check-box {{ 'done' if r.fotos_listas else '' }}"></span> Fotos
+        </div>
+        <div class="check-item">
+            <span class="check-box {{ 'done' if r.videos_listos else '' }}"></span> Videos
+        </div>
+    </div>
+
+    {% if r.notas %}
+    <div class="notas">{{ r.notas }}</div>
+    {% endif %}
+</div>
+{% endfor %}
+{% else %}
+<div class="empty">Sin remates en {{ mes_nombre }} {{ anio }}</div>
+{% endif %}
+
+</body>
+</html>

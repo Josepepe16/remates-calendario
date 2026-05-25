@@ -97,12 +97,22 @@
                            value="{{ remate.provincia or '' if remate else '' }}">
                 </div>
             </div>
-            <div class="mb-1">
+            <div class="mb-3">
                 <label class="form-label">Estado</label>
                 <select name="estado" class="form-select">
                     {% for e in ESTADOS %}
                     <option value="{{ e }}" {{ 'selected' if remate and remate.estado == e else ('' if remate else ('selected' if e == 'programado' else '')) }}>
                         {{ STATUS_LABELS[e] }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-1">
+                <label class="form-label">Categoría</label>
+                <select name="categoria" class="form-select">
+                    {% for key, info in CATEGORIAS.items() %}
+                    <option value="{{ key }}" {{ 'selected' if remate and remate.categoria == key else ('' if remate else ('selected' if key == 'otro' else '')) }}>
+                        {{ info.label }}
                     </option>
                     {% endfor %}
                 </select>

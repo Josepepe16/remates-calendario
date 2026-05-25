@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editar persona' if persona else 'Nueva persona' }}{% endblock %}
+
+{% block top_right %}
+<a href="/personas" class="text-muted text-decoration-none">
+    <i class="bi bi-x-lg" style="font-size:1.2rem;"></i>
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="page-title mt-3 mb-3">{{ 'Editar persona' if persona else 'Nueva persona' }}</div>
+
+<form method="post" action="{{ '/persona/' + persona.id|string + '/editar' if persona else '/persona/nueva' }}">
+    <div class="card mb-3">
+        <div class="card-body px-3 py-3">
+            <div class="mb-3">
+                <label class="form-label">Nombre *</label>
+                <input type="text" name="nombre" class="form-control" required
+                       placeholder="Nombre completo"
+                       value="{{ persona.nombre if persona else '' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Rol</label>
+                <select name="rol" class="form-select">
+                    <option value="">— Sin especificar —</option>
+                    {% for r in ROLES_PERSONA %}
+                    <option value="{{ r }}" {{ 'selected' if persona and persona.rol == r else '' }}>{{ r }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Teléfono</label>
+                <input type="tel" name="telefono" class="form-control"
+                       placeholder="Ej: 099 123 456"
+                       value="{{ persona.telefono or '' if persona else '' }}">
+            </div>
+            <div class="mb-1">
+                <label class="form-label">Notas</label>
+                <textarea name="notas" class="form-control" rows="3"
+                          placeholder="Observaciones, contacto adicional...">{{ persona.notas or '' if persona else '' }}</textarea>
+            </div>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-success w-100 mb-3" style="border-radius:14px; padding:14px; font-weight:700;">
+        <i class="bi bi-check-lg me-2"></i>Guardar
+    </button>
+</form>
+
+{% if persona %}
+<div class="text-center mb-4">
+    <form method="post" action="/persona/{{ persona.id }}/eliminar"
+          onsubmit="return confirm('¿Eliminar a {{ persona.nombre }}?')">
+        <button type="submit" class="btn btn-outline-danger btn-sm">
+            <i class="bi bi-trash me-1"></i>Eliminar
+        </button>
+    </form>
+</div>
+{% endif %}
+{% endblock %}

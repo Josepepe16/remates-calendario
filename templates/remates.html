@@ -82,67 +82,88 @@
             </div>
         </div>
         <div style="flex:1; height:2px; background:linear-gradient(to right,#19875440,transparent); border-radius:2px;"></div>
-        <div style="font-size:.75rem; color:#6c757d; flex-shrink:0;">{{ grupo.remates|length }} remate{{ 's' if grupo.remates|length != 1 else '' }}</div>
+        <div class="d-flex align-items-center gap-2">
+            <div style="font-size:.75rem; color:#6c757d; flex-shrink:0;">{{ grupo.remates|length }} remate{{ 's' if grupo.remates|length != 1 else '' }}</div>
+            <a href="/imprimir/{{ anio }}/{{ mes }}" target="_blank"
+               title="Imprimir mes" style="color:#adb5bd; text-decoration:none; font-size:.9rem;">
+                <i class="bi bi-printer"></i>
+            </a>
+        </div>
     </div>
 
     <!-- Remates del mes -->
     {% for r in grupo.remates %}
-    <a href="/remate/{{ r.id }}" style="text-decoration:none; color:inherit;">
-        <div class="card card-remate mb-2">
-            <div class="card-body py-3 px-3">
-                <div class="d-flex align-items-start justify-content-between gap-2">
-                    <!-- Fecha cuadro -->
-                    <div style="flex-shrink:0; text-align:center; width:42px;">
-                        {% set dia = r.fecha_remate[8:10] if r.fecha_remate|length >= 10 else '?' %}
-                        <div style="font-size:1.3rem; font-weight:800; color:#212529; line-height:1;">{{ dia }}</div>
-                        <div style="font-size:.65rem; color:#6c757d; text-transform:uppercase; font-weight:600;">
-                            {{ r.fecha_remate | fecha_corta }}
-                        </div>
+    <div class="card card-remate mb-2" id="card-{{ r.id }}">
+        <div class="card-body py-3 px-3">
+            <div class="d-flex align-items-start justify-content-between gap-2">
+                <!-- Fecha cuadro -->
+                <a href="/remate/{{ r.id }}" style="text-decoration:none; color:inherit; flex-shrink:0; text-align:center; width:42px;">
+                    {% set dia = r.fecha_remate[8:10] if r.fecha_remate|length >= 10 else '?' %}
+                    <div style="font-size:1.3rem; font-weight:800; color:#212529; line-height:1;">{{ dia }}</div>
+                    <div style="font-size:.65rem; color:#6c757d; text-transform:uppercase; font-weight:600;">
+                        {{ r.fecha_remate | fecha_corta }}
                     </div>
-                    <!-- Divisor vertical -->
-                    <div style="width:2px; background:#e9ecef; border-radius:2px; align-self:stretch; flex-shrink:0;"></div>
-                    <!-- Info -->
-                    <div style="flex:1; min-width:0;">
-                        <div style="font-weight:700; font-size:.92rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                            {{ r.titulo }}
-                        </div>
-                        {% if r.establecimiento %}
-                        <div class="text-muted mt-1" style="font-size:.76rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                            <i class="bi bi-building me-1"></i>{{ r.establecimiento }}
-                        </div>
-                        {% endif %}
-                        {% if r.lugar or r.ciudad %}
-                        <div class="text-muted mt-1" style="font-size:.76rem;">
-                            <i class="bi bi-geo-alt me-1"></i>{{ [r.lugar, r.ciudad] | select | join(', ') }}
-                        </div>
-                        {% endif %}
-                        {% if r.transmision_nombre %}
-                        <div class="text-muted mt-1" style="font-size:.76rem;">
-                            <i class="bi bi-broadcast me-1"></i>{{ r.transmision_nombre }}
-                            {% if r.transmision_plataforma %}
-                            <span class="badge ms-1" style="background:#f0f0f0;color:#555;font-size:.62rem;">{{ r.transmision_plataforma }}</span>
-                            {% endif %}
-                        </div>
-                        {% endif %}
+                </a>
+                <!-- Divisor vertical -->
+                <div style="width:2px; background:#e9ecef; border-radius:2px; align-self:stretch; flex-shrink:0;"></div>
+                <!-- Info -->
+                <a href="/remate/{{ r.id }}" style="text-decoration:none; color:inherit; flex:1; min-width:0;">
+                    <div style="font-weight:700; font-size:.92rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                        {{ r.titulo }}
                     </div>
-                    <!-- Estado y días -->
-                    <div class="text-end" style="flex-shrink:0;">
-                        <span class="badge badge-{{ r.estado }}" style="font-size:.64rem;">{{ STATUS_LABELS[r.estado] }}</span>
-                        <div style="font-size:.7rem; font-weight:700; color:#198754; margin-top:4px;">
-                            {{ r.fecha_remate | dias_restantes }}
-                        </div>
-                        <!-- Puntos de progreso -->
-                        <div class="d-flex gap-1 justify-content-end mt-1">
-                            <span title="Transmisión" style="width:7px;height:7px;border-radius:50%;display:inline-block;background:{{ '#0d6efd' if r.transmision_configurada else '#dee2e6' }};"></span>
-                            <span title="Catálogo"    style="width:7px;height:7px;border-radius:50%;display:inline-block;background:{{ '#fd7e14' if r.catalogo_listo else '#dee2e6' }};"></span>
-                            <span title="Fotos"       style="width:7px;height:7px;border-radius:50%;display:inline-block;background:{{ '#6f42c1' if r.fotos_listas else '#dee2e6' }};"></span>
-                            <span title="Videos"      style="width:7px;height:7px;border-radius:50%;display:inline-block;background:{{ '#e83e8c' if r.videos_listos else '#dee2e6' }};"></span>
-                        </div>
+                    {% if r.establecimiento %}
+                    <div class="text-muted mt-1" style="font-size:.76rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                        <i class="bi bi-building me-1"></i>{{ r.establecimiento }}
+                    </div>
+                    {% endif %}
+                    {% if r.lugar or r.ciudad %}
+                    <div class="text-muted mt-1" style="font-size:.76rem;">
+                        <i class="bi bi-geo-alt me-1"></i>{{ [r.lugar, r.ciudad] | select | join(', ') }}
+                    </div>
+                    {% endif %}
+                    {% if r.transmision_nombre %}
+                    <div class="text-muted mt-1" style="font-size:.76rem;">
+                        <i class="bi bi-broadcast me-1"></i>{{ r.transmision_nombre }}
+                    </div>
+                    {% endif %}
+                </a>
+                <!-- Estado y días -->
+                <div class="text-end" style="flex-shrink:0;">
+                    {% if current_user.puede_modificar %}
+                    <!-- Quick status dropdown -->
+                    <div class="dropdown">
+                        <span class="badge badge-{{ r.estado }} dropdown-toggle" data-bs-toggle="dropdown"
+                              style="font-size:.64rem; cursor:pointer;" id="estado-badge-{{ r.id }}">
+                            {{ STATUS_LABELS[r.estado] }}
+                        </span>
+                        <ul class="dropdown-menu dropdown-menu-end" style="border-radius:12px; font-size:.8rem; min-width:150px; border:none; box-shadow:0 4px 20px rgba(0,0,0,.15);">
+                            {% for e in ESTADOS %}
+                            <li>
+                                <a class="dropdown-item py-2" href="#"
+                                   onclick="cambiarEstadoRapido({{ r.id }}, '{{ e }}', '{{ STATUS_LABELS[e] }}'); return false;">
+                                    {{ STATUS_LABELS[e] }}
+                                </a>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% else %}
+                    <span class="badge badge-{{ r.estado }}" style="font-size:.64rem;">{{ STATUS_LABELS[r.estado] }}</span>
+                    {% endif %}
+                    <div style="font-size:.7rem; font-weight:700; color:#198754; margin-top:4px;">
+                        {{ r.fecha_remate | dias_restantes }}
+                    </div>
+                    <!-- Puntos de progreso -->
+                    <div class="d-flex gap-1 justify-content-end mt-1">
+                        <span title="Transmisión" style="width:7px;height:7px;border-radius:50%;display:inline-block;background:{{ '#0d6efd' if r.transmision_configurada else '#dee2e6' }};"></span>
+                        <span title="Catálogo"    style="width:7px;height:7px;border-radius:50%;display:inline-block;background:{{ '#fd7e14' if r.catalogo_listo else '#dee2e6' }};"></span>
+                        <span title="Fotos"       style="width:7px;height:7px;border-radius:50%;display:inline-block;background:{{ '#6f42c1' if r.fotos_listas else '#dee2e6' }};"></span>
+                        <span title="Videos"      style="width:7px;height:7px;border-radius:50%;display:inline-block;background:{{ '#e83e8c' if r.videos_listos else '#dee2e6' }};"></span>
                     </div>
                 </div>
             </div>
         </div>
-    </a>
+    </div>
     {% endfor %}
 
     {% endfor %}
@@ -172,4 +193,24 @@
 {% endif %}
 
 <div style="height:12px;"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function cambiarEstadoRapido(rid, estado, label) {
+    fetch(`/remate/${rid}/estado-rapido`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `estado=${estado}`
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            const badge = document.getElementById(`estado-badge-${rid}`);
+            if (badge) {
+                badge.textContent = data.label;
+                badge.className = `badge badge-${data.estado} dropdown-toggle`;
+            }
+        }
+    });
+}
+</script>
 {% endblock %}

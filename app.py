@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 import sqlite3
 import os
 import hashlib
+import uuid
 from datetime import datetime, timedelta, date
 from functools import wraps
 
@@ -31,6 +32,20 @@ STATUS_LABELS = {
     'cancelado': 'Cancelado',
 }
 ROLES = {'admin': 'Administrador', 'editor': 'Editor', 'viewer': 'Solo lectura'}
+ROLES_PERSONA = ['Transmisor', 'Retransmisor', 'Fotógrafo', 'Camarógrafo', 'Coordinador', 'Otro']
+CATEGORIAS = {
+    'hacienda_vacuna': {'label': 'Hacienda Vacuna', 'color': '#198754', 'bg': '#d1e7dd'},
+    'hacienda_equina': {'label': 'Hacienda Equina', 'color': '#0d6efd', 'bg': '#cfe2ff'},
+    'inmuebles':       {'label': 'Inmuebles',        'color': '#fd7e14', 'bg': '#ffe5d0'},
+    'maquinaria':      {'label': 'Maquinaria',       'color': '#d97706', 'bg': '#fef3c7'},
+    'mixto':           {'label': 'Mixto',            'color': '#6f42c1', 'bg': '#f3e8ff'},
+    'otro':            {'label': 'Otro',             'color': '#6c757d', 'bg': '#e2e3e5'},
+}
+MESES = {
+    1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril',
+    5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto',
+    9: 'Setiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre',
+}
 
 
 # ─── DB ──────────────────────────────────────────────────────────────────────
@@ -97,7 +112,32 @@ def init_db():
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS personas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL,
+                rol TEXT,
+                telefono TEXT,
+                notas TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS historial (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                remate_id INTEGER,
+                usuario_nombre TEXT,
+                accion TEXT,
+                detalle TEXT,
+                fecha TEXT DEFAULT CURRENT_TIMESTAMP
+            );
         ''')
+        # Migrations: add new columns if they don't exist
+        for col, defval in [('categoria', "'otro'"), ('token_publico', 'NULL')]:
+            try:
+                db.execute(f'ALTER TABLE remates ADD COLUMN {col} TEXT DEFAULT {defval}')
+                db.commit()
+            except Exception:
+                pass
         # Crear admin por defecto si no hay usuarios
         existing = db.execute('SELECT COUNT(*) FROM usuarios').fetchone()[0]
         if existing == 0:
@@ -106,6 +146,15 @@ def init_db():
                 ('admin', hash_password('admin123'), 'Administrador', 'admin')
             )
             db.commit()
+
+
+def _log_historial(remate_id, accion, detalle=''):
+    nombre = session.get('nombre', 'sistema')
+    with get_db() as db:
+        db.execute(
+            'INSERT INTO historial (remate_id, usuario_nombre, accion, detalle, fecha) VALUES (?,?,?,?,?)',
+            (remate_id, nombre, accion, detalle, datetime.now().isoformat())
+        )
 
 
 # ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -120,7 +169,6 @@ def login_required(f):
 
 
 def editor_required(f):
-    """Requiere rol admin o editor para modificar datos."""
     @wraps(f)
     def decorated(*args, **kwargs):
         if 'user_id' not in session:
@@ -158,7 +206,9 @@ def inject_user():
             'nombre': session.get('nombre', ''),
             'rol': session.get('rol', ''),
             'puede_modificar': puede_modificar(),
-        }
+        },
+        'CATEGORIAS': CATEGORIAS,
+        'MESES': MESES,
     }
 
 
@@ -265,6 +315,72 @@ def eliminar_usuario(uid):
     return redirect(url_for('usuarios'))
 
 
+# ─── Personas (equipo) ───────────────────────────────────────────────────────
+
+@app.route('/personas')
+@login_required
+def personas():
+    with get_db() as db:
+        rows = db.execute('SELECT * FROM personas ORDER BY nombre').fetchall()
+    return render_template('personas.html', personas=rows, ROLES_PERSONA=ROLES_PERSONA, active_page='personas')
+
+
+@app.route('/persona/nueva', methods=['GET', 'POST'])
+@editor_required
+def nueva_persona():
+    if request.method == 'POST':
+        nombre = request.form.get('nombre', '').strip()
+        if not nombre:
+            flash('El nombre es obligatorio.', 'danger')
+            return redirect(url_for('nueva_persona'))
+        with get_db() as db:
+            db.execute(
+                'INSERT INTO personas (nombre, rol, telefono, notas) VALUES (?,?,?,?)',
+                (nombre, request.form.get('rol', '').strip() or None,
+                 request.form.get('telefono', '').strip() or None,
+                 request.form.get('notas', '').strip() or None)
+            )
+        flash(f'"{nombre}" agregado al equipo.', 'success')
+        return redirect(url_for('personas'))
+    return render_template('persona_form.html', persona=None, ROLES_PERSONA=ROLES_PERSONA, active_page='personas')
+
+
+@app.route('/persona/<int:pid>/editar', methods=['GET', 'POST'])
+@editor_required
+def editar_persona(pid):
+    with get_db() as db:
+        p = db.execute('SELECT * FROM personas WHERE id=?', (pid,)).fetchone()
+    if not p:
+        flash('Persona no encontrada.', 'danger')
+        return redirect(url_for('personas'))
+    if request.method == 'POST':
+        nombre = request.form.get('nombre', '').strip()
+        if not nombre:
+            flash('El nombre es obligatorio.', 'danger')
+            return redirect(url_for('editar_persona', pid=pid))
+        with get_db() as db:
+            db.execute(
+                'UPDATE personas SET nombre=?, rol=?, telefono=?, notas=? WHERE id=?',
+                (nombre, request.form.get('rol', '').strip() or None,
+                 request.form.get('telefono', '').strip() or None,
+                 request.form.get('notas', '').strip() or None, pid)
+            )
+        flash('Persona actualizada.', 'success')
+        return redirect(url_for('personas'))
+    return render_template('persona_form.html', persona=p, ROLES_PERSONA=ROLES_PERSONA, active_page='personas')
+
+
+@app.route('/persona/<int:pid>/eliminar', methods=['POST'])
+@editor_required
+def eliminar_persona(pid):
+    with get_db() as db:
+        p = db.execute('SELECT nombre FROM personas WHERE id=?', (pid,)).fetchone()
+        if p:
+            db.execute('DELETE FROM personas WHERE id=?', (pid,))
+    flash('Persona eliminada.', 'success')
+    return redirect(url_for('personas'))
+
+
 # ─── App routes ───────────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -307,6 +423,62 @@ def index():
     )
 
 
+@app.route('/agenda')
+@login_required
+def agenda():
+    hoy = date.today()
+    fin = hoy + timedelta(days=14)
+    with get_db() as db:
+        remates_rows = db.execute(
+            "SELECT * FROM remates WHERE DATE(fecha_remate) BETWEEN ? AND ? "
+            "AND estado != 'cancelado' ORDER BY fecha_remate ASC",
+            (hoy.isoformat(), fin.isoformat())
+        ).fetchall()
+        fotos_rows = db.execute(
+            "SELECT * FROM remates WHERE DATE(fecha_fotos) BETWEEN ? AND ? "
+            "AND estado != 'cancelado' ORDER BY fecha_fotos ASC",
+            (hoy.isoformat(), fin.isoformat())
+        ).fetchall()
+        videos_rows = db.execute(
+            "SELECT * FROM remates WHERE DATE(fecha_videos) BETWEEN ? AND ? "
+            "AND estado != 'cancelado' ORDER BY fecha_videos ASC",
+            (hoy.isoformat(), fin.isoformat())
+        ).fetchall()
+
+    dias = []
+    for i in range(15):
+        d = hoy + timedelta(days=i)
+        eventos_dia = []
+        for r in remates_rows:
+            try:
+                if datetime.fromisoformat(r['fecha_remate'].replace('Z', '')).date() == d:
+                    eventos_dia.append({'tipo': 'remate', 'r': r})
+            except Exception:
+                pass
+        for r in fotos_rows:
+            try:
+                if r['fecha_fotos'] and datetime.fromisoformat(r['fecha_fotos'].replace('Z', '')).date() == d:
+                    eventos_dia.append({'tipo': 'fotos', 'r': r})
+            except Exception:
+                pass
+        for r in videos_rows:
+            try:
+                if r['fecha_videos'] and datetime.fromisoformat(r['fecha_videos'].replace('Z', '')).date() == d:
+                    eventos_dia.append({'tipo': 'videos', 'r': r})
+            except Exception:
+                pass
+        dias.append({'fecha': d, 'eventos': eventos_dia})
+
+    return render_template(
+        'agenda.html',
+        dias=dias,
+        hoy=hoy,
+        active_page='agenda',
+        STATUS_LABELS=STATUS_LABELS,
+        STATUS_COLORS=STATUS_COLORS,
+    )
+
+
 @app.route('/calendario')
 @login_required
 def calendario():
@@ -320,7 +492,8 @@ def api_eventos():
         rows = db.execute('SELECT * FROM remates ORDER BY fecha_remate').fetchall()
     eventos = []
     for r in rows:
-        color = STATUS_COLORS.get(r['estado'], '#6c757d')
+        cat = r['categoria'] if r['categoria'] in CATEGORIAS else 'otro'
+        color = CATEGORIAS[cat]['color']
         eventos.append({
             'id': r['id'],
             'title': r['titulo'],
@@ -331,6 +504,7 @@ def api_eventos():
                 'estado': STATUS_LABELS.get(r['estado'], r['estado']),
                 'lugar': r['lugar'] or '',
                 'ciudad': r['ciudad'] or '',
+                'categoria': CATEGORIAS[cat]['label'],
             }
         })
         if r['fecha_fotos']:
@@ -352,13 +526,6 @@ def api_eventos():
                 'display': 'list-item',
             })
     return jsonify(eventos)
-
-
-MESES = {
-    1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril',
-    5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto',
-    9: 'Setiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre',
-}
 
 
 @app.route('/remates')
@@ -383,21 +550,18 @@ def remates():
         sql += ' ORDER BY fecha_remate ASC'
         rows = db.execute(sql, params).fetchall()
 
-        # Contar por estado
         counts = {'todos': 0}
         for estado in ESTADOS:
             c = db.execute('SELECT COUNT(*) as cnt FROM remates WHERE estado=?', (estado,)).fetchone()
             counts[estado] = c['cnt']
             counts['todos'] += c['cnt']
 
-        # Meses con remates (para los filtros)
         meses_con_remates = db.execute(
             "SELECT DISTINCT CAST(strftime('%m', fecha_remate) AS INTEGER) as mes, "
             "CAST(strftime('%Y', fecha_remate) AS INTEGER) as anio "
             "FROM remates ORDER BY fecha_remate ASC"
         ).fetchall()
 
-    # Agrupar por mes/año
     from collections import OrderedDict
     grupos = OrderedDict()
     for r in rows:
@@ -423,6 +587,7 @@ def remates():
         MESES=MESES,
         active_page='remates',
         STATUS_LABELS=STATUS_LABELS,
+        ESTADOS=ESTADOS,
     )
 
 
@@ -431,8 +596,7 @@ def remates():
 def nuevo_remate():
     if request.method == 'POST':
         return _guardar_remate(None)
-    nombres = _get_autocomplete_names()
-    lugares = _get_autocomplete_lugares()
+    nombres, lugares = _get_autocomplete()
     return render_template(
         'remate_form.html',
         remate=None,
@@ -441,6 +605,7 @@ def nuevo_remate():
         PLATAFORMAS=PLATAFORMAS,
         ESTADOS=ESTADOS,
         STATUS_LABELS=STATUS_LABELS,
+        CATEGORIAS=CATEGORIAS,
         nombres=nombres,
         lugares=lugares,
     )
@@ -451,16 +616,22 @@ def nuevo_remate():
 def ver_remate(rid):
     with get_db() as db:
         r = db.execute('SELECT * FROM remates WHERE id=?', (rid,)).fetchone()
+        historial = db.execute(
+            'SELECT * FROM historial WHERE remate_id=? ORDER BY fecha DESC LIMIT 30',
+            (rid,)
+        ).fetchall()
     if not r:
         flash('Remate no encontrado', 'danger')
         return redirect(url_for('remates'))
     return render_template(
         'remate_detail.html',
         r=r,
+        historial=historial,
         active_page='remates',
         STATUS_LABELS=STATUS_LABELS,
         STATUS_COLORS=STATUS_COLORS,
         ESTADOS=ESTADOS,
+        CATEGORIAS=CATEGORIAS,
     )
 
 
@@ -474,8 +645,7 @@ def editar_remate(rid):
         return redirect(url_for('remates'))
     if request.method == 'POST':
         return _guardar_remate(rid)
-    nombres = _get_autocomplete_names()
-    lugares = _get_autocomplete_lugares()
+    nombres, lugares = _get_autocomplete()
     return render_template(
         'remate_form.html',
         remate=r,
@@ -484,32 +654,145 @@ def editar_remate(rid):
         PLATAFORMAS=PLATAFORMAS,
         ESTADOS=ESTADOS,
         STATUS_LABELS=STATUS_LABELS,
+        CATEGORIAS=CATEGORIAS,
         nombres=nombres,
         lugares=lugares,
     )
 
 
-def _get_autocomplete_names():
+@app.route('/remate/<int:rid>/duplicar', methods=['POST'])
+@editor_required
+def duplicar_remate(rid):
+    with get_db() as db:
+        r = db.execute('SELECT * FROM remates WHERE id=?', (rid,)).fetchone()
+    if not r:
+        flash('Remate no encontrado.', 'danger')
+        return redirect(url_for('remates'))
+    now = datetime.now().isoformat()
+    with get_db() as db:
+        db.execute(
+            '''INSERT INTO remates (
+                titulo, fecha_remate, lugar, establecimiento, ciudad, provincia,
+                transmision_nombre, transmision_plataforma, transmision_url,
+                retransmision_nombre, retransmision_plataforma, retransmision_url,
+                catalogo_descripcion, catalogo_url, cantidad_lotes,
+                fecha_fotos, responsable_fotos, fecha_videos, responsable_videos,
+                estado, notas, categoria, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+            (
+                f'Copia de {r["titulo"]}', r['fecha_remate'],
+                r['lugar'], r['establecimiento'], r['ciudad'], r['provincia'],
+                r['transmision_nombre'], r['transmision_plataforma'], r['transmision_url'],
+                r['retransmision_nombre'], r['retransmision_plataforma'], r['retransmision_url'],
+                r['catalogo_descripcion'], r['catalogo_url'], r['cantidad_lotes'],
+                r['fecha_fotos'], r['responsable_fotos'], r['fecha_videos'], r['responsable_videos'],
+                'programado', r['notas'], r['categoria'] or 'otro', now,
+            )
+        )
+        new_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+    _log_historial(new_id, 'creado', f'Duplicado desde remate #{rid}')
+    flash('Remate duplicado. Editá los datos que corresponda.', 'success')
+    return redirect(url_for('editar_remate', rid=new_id))
+
+
+@app.route('/remate/<int:rid>/estado-rapido', methods=['POST'])
+@editor_required
+def estado_rapido(rid):
+    nuevo = request.form.get('estado') or request.json and request.json.get('estado')
+    if not nuevo:
+        data = request.get_json(silent=True) or {}
+        nuevo = data.get('estado')
+    if nuevo not in ESTADOS:
+        return jsonify({'ok': False, 'error': 'Estado inválido'}), 400
+    with get_db() as db:
+        r = db.execute('SELECT estado FROM remates WHERE id=?', (rid,)).fetchone()
+        if not r:
+            return jsonify({'ok': False, 'error': 'No encontrado'}), 404
+        viejo = r['estado']
+        db.execute(
+            'UPDATE remates SET estado=?, updated_at=? WHERE id=?',
+            (nuevo, datetime.now().isoformat(), rid)
+        )
+    _log_historial(rid, 'estado', f'{STATUS_LABELS[viejo]} → {STATUS_LABELS[nuevo]}')
+    return jsonify({'ok': True, 'estado': nuevo, 'label': STATUS_LABELS[nuevo]})
+
+
+@app.route('/remate/<int:rid>/token', methods=['POST'])
+@editor_required
+def generar_token(rid):
+    token = uuid.uuid4().hex
+    with get_db() as db:
+        db.execute('UPDATE remates SET token_publico=? WHERE id=?', (token, rid))
+    _log_historial(rid, 'token', 'Link público generado')
+    flash('Link público generado.', 'success')
+    return redirect(url_for('ver_remate', rid=rid))
+
+
+@app.route('/remate/<int:rid>/token/quitar', methods=['POST'])
+@editor_required
+def quitar_token(rid):
+    with get_db() as db:
+        db.execute('UPDATE remates SET token_publico=NULL WHERE id=?', (rid,))
+    _log_historial(rid, 'token', 'Link público desactivado')
+    flash('Link público desactivado.', 'success')
+    return redirect(url_for('ver_remate', rid=rid))
+
+
+@app.route('/publico/<token>')
+def publico(token):
+    with get_db() as db:
+        r = db.execute('SELECT * FROM remates WHERE token_publico=?', (token,)).fetchone()
+    if not r:
+        return render_template('publico_404.html'), 404
+    return render_template(
+        'publico.html',
+        r=r,
+        STATUS_LABELS=STATUS_LABELS,
+        CATEGORIAS=CATEGORIAS,
+    )
+
+
+@app.route('/imprimir/<int:anio>/<int:mes>')
+@login_required
+def imprimir_mes(anio, mes):
+    if mes < 1 or mes > 12:
+        flash('Mes inválido.', 'danger')
+        return redirect(url_for('remates'))
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT * FROM remates WHERE strftime('%Y', fecha_remate)=? "
+            "AND strftime('%m', fecha_remate)=? ORDER BY fecha_remate ASC",
+            (str(anio), str(mes).zfill(2))
+        ).fetchall()
+    return render_template(
+        'imprimir_mes.html',
+        remates=rows,
+        anio=anio,
+        mes=mes,
+        mes_nombre=MESES.get(mes, ''),
+        STATUS_LABELS=STATUS_LABELS,
+        CATEGORIAS=CATEGORIAS,
+    )
+
+
+def _get_autocomplete():
     with get_db() as db:
         rows = db.execute(
             'SELECT transmision_nombre, retransmision_nombre, '
             'responsable_fotos, responsable_videos FROM remates'
         ).fetchall()
-    names = set()
+        personas = db.execute('SELECT nombre FROM personas ORDER BY nombre').fetchall()
+        lugares_rows = db.execute(
+            'SELECT DISTINCT lugar FROM remates WHERE lugar IS NOT NULL AND lugar != ""'
+        ).fetchall()
+    names = set(p['nombre'] for p in personas)
     for row in rows:
         for val in [row['transmision_nombre'], row['retransmision_nombre'],
                     row['responsable_fotos'], row['responsable_videos']]:
             if val:
                 names.add(val.strip())
-    return sorted(names)
-
-
-def _get_autocomplete_lugares():
-    with get_db() as db:
-        rows = db.execute(
-            'SELECT DISTINCT lugar FROM remates WHERE lugar IS NOT NULL AND lugar != ""'
-        ).fetchall()
-    return [r['lugar'] for r in rows]
+    lugares = [r['lugar'] for r in lugares_rows]
+    return sorted(names), lugares
 
 
 def _guardar_remate(rid):
@@ -527,6 +810,9 @@ def _guardar_remate(rid):
         fecha_remate = f'{fecha_remate}T{hora}'
     cantidad_lotes = f.get('cantidad_lotes', '').strip()
     cantidad_lotes = int(cantidad_lotes) if cantidad_lotes.isdigit() else None
+    categoria = f.get('categoria', 'otro')
+    if categoria not in CATEGORIAS:
+        categoria = 'otro'
     params = (
         titulo,
         fecha_remate,
@@ -549,6 +835,7 @@ def _guardar_remate(rid):
         f.get('responsable_videos', '').strip() or None,
         f.get('estado', 'programado'),
         f.get('notas', '').strip() or None,
+        categoria,
         datetime.now().isoformat(),
     )
     with get_db() as db:
@@ -560,11 +847,12 @@ def _guardar_remate(rid):
                     retransmision_nombre, retransmision_plataforma, retransmision_url,
                     catalogo_descripcion, catalogo_url, cantidad_lotes,
                     fecha_fotos, responsable_fotos, fecha_videos, responsable_videos,
-                    estado, notas, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    estado, notas, categoria, updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                 params
             )
             new_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+            _log_historial(new_id, 'creado', titulo)
             flash('Remate creado correctamente.', 'success')
             return redirect(url_for('ver_remate', rid=new_id))
         else:
@@ -575,10 +863,11 @@ def _guardar_remate(rid):
                     retransmision_nombre=?, retransmision_plataforma=?, retransmision_url=?,
                     catalogo_descripcion=?, catalogo_url=?, cantidad_lotes=?,
                     fecha_fotos=?, responsable_fotos=?, fecha_videos=?, responsable_videos=?,
-                    estado=?, notas=?, updated_at=?
+                    estado=?, notas=?, categoria=?, updated_at=?
                 WHERE id=?''',
                 params + (rid,)
             )
+            _log_historial(rid, 'editado', titulo)
             flash('Remate actualizado correctamente.', 'success')
             return redirect(url_for('ver_remate', rid=rid))
 
@@ -591,10 +880,13 @@ def cambiar_estado(rid):
         flash('Estado inválido.', 'danger')
         return redirect(url_for('ver_remate', rid=rid))
     with get_db() as db:
+        r = db.execute('SELECT estado FROM remates WHERE id=?', (rid,)).fetchone()
+        viejo = r['estado'] if r else '?'
         db.execute(
             'UPDATE remates SET estado=?, updated_at=? WHERE id=?',
             (nuevo, datetime.now().isoformat(), rid)
         )
+    _log_historial(rid, 'estado', f'{STATUS_LABELS.get(viejo, viejo)} → {STATUS_LABELS[nuevo]}')
     flash(f'Estado cambiado a {STATUS_LABELS[nuevo]}.', 'success')
     return redirect(url_for('ver_remate', rid=rid))
 
@@ -612,6 +904,14 @@ def actualizar_checklist(rid):
             f'UPDATE remates SET {campo}=?, updated_at=? WHERE id=?',
             (valor, datetime.now().isoformat(), rid)
         )
+    label_map = {
+        'catalogo_listo': 'Catálogo',
+        'fotos_listas': 'Fotos',
+        'videos_listos': 'Videos',
+        'transmision_configurada': 'Transmisión',
+    }
+    accion = 'check_on' if valor else 'check_off'
+    _log_historial(rid, accion, label_map.get(campo, campo))
     return jsonify({'ok': True, 'valor': valor})
 
 
@@ -624,6 +924,7 @@ def eliminar_remate(rid):
             flash('Remate no encontrado.', 'danger')
             return redirect(url_for('remates'))
         db.execute('DELETE FROM remates WHERE id=?', (rid,))
+        db.execute('DELETE FROM historial WHERE remate_id=?', (rid,))
     flash(f'Remate "{r["titulo"]}" eliminado.', 'success')
     return redirect(url_for('remates'))
 
@@ -653,7 +954,7 @@ def fecha_corta(value):
         dt = datetime.fromisoformat(value.replace('Z', ''))
         meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun',
                  'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
-        return f'{dt.day} {meses[dt.month-1]}'
+        return f'{meses[dt.month-1]}'
     except Exception:
         return value
 
@@ -672,6 +973,18 @@ def dias_restantes(value):
         if diff == 1:
             return 'mañana'
         return f'en {diff}d'
+    except Exception:
+        return ''
+
+
+@app.template_filter('dia_semana')
+def dia_semana(value):
+    dias = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+    try:
+        if isinstance(value, date):
+            return dias[value.weekday()]
+        dt = datetime.fromisoformat(str(value).replace('Z', ''))
+        return dias[dt.weekday()]
     except Exception:
         return ''
 
