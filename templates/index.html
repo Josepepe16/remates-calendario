@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Inicio{% endblock %}
+
+{% block top_right %}
+<span class="text-muted" style="font-size:.8rem;">{{ ahora.strftime('%d/%m/%Y') }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="page-title mt-3 mb-3">Panel de Remates</div>
+
+<!-- Stats grid -->
+<div class="row g-2 mb-2">
+    <div class="col-3">
+        <div class="stat-card" style="background:#f8f9fa; padding:12px 4px;">
+            <div class="num text-dark" style="font-size:1.6rem;">{{ stats.total }}</div>
+            <div class="lbl">Total</div>
+        </div>
+    </div>
+    <div class="col-3">
+        <div class="stat-card" style="background:#cfe2ff; padding:12px 4px;">
+            <div class="num" style="color:#084298; font-size:1.6rem;">{{ stats.programado }}</div>
+            <div class="lbl" style="color:#084298;">Prog.</div>
+        </div>
+    </div>
+    <div class="col-3">
+        <div class="stat-card" style="background:#ffe5d0; padding:12px 4px;">
+            <div class="num" style="color:#7a3600; font-size:1.6rem;">{{ stats.en_progreso }}</div>
+            <div class="lbl" style="color:#7a3600;">Curso</div>
+        </div>
+    </div>
+    <div class="col-3">
+        <div class="stat-card" style="background:#d1e7dd; padding:12px 4px;">
+            <div class="num" style="color:#0a3622; font-size:1.6rem;">{{ stats.finalizado }}</div>
+            <div class="lbl" style="color:#0a3622;">Finalizados</div>
+        </div>
+    </div>
+</div>
+
+<!-- Próximos remates -->
+<div class="section-label">Próximos remates</div>
+{% if proximos %}
+{% for r in proximos %}
+<a href="/remate/{{ r.id }}" style="text-decoration:none;">
+    <div class="card card-remate mb-2">
+        <div class="card-body py-3 px-3">
+            <div class="d-flex align-items-start justify-content-between gap-2">
+                <div style="flex:1; min-width:0;">
+                    <div style="font-weight:700; font-size:.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ r.titulo }}</div>
+                    {% if r.lugar or r.ciudad %}
+                    <div class="text-muted mt-1" style="font-size:.8rem;">
+                        <i class="bi bi-geo-alt-fill me-1"></i>{{ [r.lugar, r.ciudad] | select | join(', ') }}
+                    </div>
+                    {% endif %}
+                    {% if r.transmision_nombre %}
+                    <div class="text-muted mt-1" style="font-size:.8rem;">
+                        <i class="bi bi-broadcast me-1"></i>{{ r.transmision_nombre }}
+                        {% if r.transmision_plataforma %}<span class="ms-1 badge" style="background:#e9ecef;color:#495057;font-size:.65rem;">{{ r.transmision_plataforma }}</span>{% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="text-end" style="flex-shrink:0;">
+                    <div style="font-size:.75rem; font-weight:700; color:#198754;">{{ r.fecha_remate | dias_restantes }}</div>
+                    <div style="font-size:.7rem; color:#6c757d;">{{ r.fecha_remate | fecha_corta }}</div>
+                    <span class="badge mt-1 badge-{{ r.estado }}" style="font-size:.65rem;">{{ STATUS_LABELS[r.estado] }}</span>
+                </div>
+            </div>
+            <!-- Mini checklist -->
+            <div class="d-flex gap-2 mt-2 flex-wrap">
+                <span class="badge" style="font-size:.65rem; background:{{ '#d1e7dd' if r.transmision_configurada else '#f8f9fa' }}; color:{{ '#0a3622' if r.transmision_configurada else '#6c757d' }};">
+                    <i class="bi bi-broadcast me-1"></i>Transmisión
+                </span>
+                <span class="badge" style="font-size:.65rem; background:{{ '#d1e7dd' if r.catalogo_listo else '#f8f9fa' }}; color:{{ '#0a3622' if r.catalogo_listo else '#6c757d' }};">
+                    <i class="bi bi-book me-1"></i>Catálogo
+                </span>
+                <span class="badge" style="font-size:.65rem; background:{{ '#d1e7dd' if r.fotos_listas else '#f8f9fa' }}; color:{{ '#0a3622' if r.fotos_listas else '#6c757d' }};">
+                    <i class="bi bi-camera me-1"></i>Fotos
+                </span>
+                <span class="badge" style="font-size:.65rem; background:{{ '#d1e7dd' if r.videos_listos else '#f8f9fa' }}; color:{{ '#0a3622' if r.videos_listos else '#6c757d' }};">
+                    <i class="bi bi-camera-video me-1"></i>Videos
+                </span>
+            </div>
+        </div>
+    </div>
+</a>
+{% endfor %}
+{% else %}
+<div class="card mb-2">
+    <div class="card-body py-4 text-center text-muted">
+        <i class="bi bi-calendar-x" style="font-size:2rem;"></i>
+        <div class="mt-2">No hay remates próximos</div>
+        <a href="/remate/nuevo" class="btn btn-success btn-sm mt-2">
+            <i class="bi bi-plus-lg me-1"></i>Crear remate
+        </a>
+    </div>
+</div>
+{% endif %}
+
+<!-- Pendientes de fotos -->
+{% if pendientes_fotos %}
+<div class="section-label">Fotos pendientes</div>
+{% for r in pendientes_fotos %}
+<a href="/remate/{{ r.id }}" style="text-decoration:none;">
+    <div class="card mb-2" style="border-left:4px solid #6f42c1 !important;">
+        <div class="card-body py-2 px-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span style="font-size:.85rem; font-weight:600;">📷 {{ r.titulo }}</span>
+                    {% if r.responsable_fotos %}
+                    <div class="text-muted" style="font-size:.75rem;">{{ r.responsable_fotos }}</div>
+                    {% endif %}
+                </div>
+                <span style="font-size:.8rem; font-weight:700; color:#6f42c1;">{{ r.fecha_fotos | dias_restantes }}</span>
+            </div>
+        </div>
+    </div>
+</a>
+{% endfor %}
+{% endif %}
+
+<!-- Pendientes de videos -->
+{% if pendientes_videos %}
+<div class="section-label">Videos pendientes</div>
+{% for r in pendientes_videos %}
+<a href="/remate/{{ r.id }}" style="text-decoration:none;">
+    <div class="card mb-2" style="border-left:4px solid #e83e8c !important;">
+        <div class="card-body py-2 px-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span style="font-size:.85rem; font-weight:600;">🎥 {{ r.titulo }}</span>
+                    {% if r.responsable_videos %}
+                    <div class="text-muted" style="font-size:.75rem;">{{ r.responsable_videos }}</div>
+                    {% endif %}
+                </div>
+                <span style="font-size:.8rem; font-weight:700; color:#e83e8c;">{{ r.fecha_videos | dias_restantes }}</span>
+            </div>
+        </div>
+    </div>
+</a>
+{% endfor %}
+{% endif %}
+
+<div style="height:8px;"></div>
+{% endblock %}

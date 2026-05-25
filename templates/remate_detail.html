@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}{{ r.titulo }}{% endblock %}
+
+{% block top_right %}
+<a href="/remate/{{ r.id }}/editar" class="btn btn-sm btn-outline-success" style="border-radius:10px; font-size:.8rem;">
+    <i class="bi bi-pencil me-1"></i>Editar
+</a>
+{% endblock %}
+
+{% block content %}
+<!-- Header card -->
+<div class="card mt-3 mb-3" style="background:linear-gradient(135deg,#198754,#20c997); color:#fff; border-radius:20px;">
+    <div class="card-body px-4 py-4">
+        <div class="d-flex justify-content-between align-items-start">
+            <div style="flex:1; min-width:0;">
+                <div style="font-size:1.15rem; font-weight:800; line-height:1.2;">{{ r.titulo }}</div>
+                {% if r.establecimiento %}
+                <div style="opacity:.85; margin-top:6px; font-size:.85rem;">{{ r.establecimiento }}</div>
+                {% endif %}
+            </div>
+            <span class="badge ms-2 badge-{{ r.estado }}" style="font-size:.75rem; flex-shrink:0;">
+                {{ STATUS_LABELS[r.estado] }}
+            </span>
+        </div>
+        <div class="mt-3 d-flex flex-wrap gap-3" style="font-size:.82rem; opacity:.9;">
+            <span><i class="bi bi-calendar3 me-1"></i>{{ r.fecha_remate | fecha_legible }}</span>
+            {% if r.lugar %}
+            <span><i class="bi bi-geo-alt-fill me-1"></i>{{ r.lugar }}{% if r.ciudad %}, {{ r.ciudad }}{% endif %}</span>
+            {% endif %}
+            {% if r.cantidad_lotes %}
+            <span><i class="bi bi-boxes me-1"></i>{{ r.cantidad_lotes }} lotes</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Checklist -->
+<div class="section-label">Lista de tareas</div>
+<div class="card mb-3">
+    <div class="card-body py-2 px-3">
+        {% set checks = [
+            ('transmision_configurada', 'Transmisión configurada', 'broadcast', '#0d6efd'),
+            ('catalogo_listo', 'Catálogo listo', 'book', '#fd7e14'),
+            ('fotos_listas', 'Fotos tomadas', 'camera', '#6f42c1'),
+            ('videos_listos', 'Videos grabados', 'camera-video', '#e83e8c'),
+        ] %}
+        {% for campo, label, icon, color in checks %}
+        <div class="d-flex align-items-center gap-3 py-2 border-bottom border-light">
+            <button class="check-toggle {{ 'done' if r[campo] else '' }}"
+                    onclick="toggleCheck('{{ campo }}', this)"
+                    data-rid="{{ r.id }}" data-campo="{{ campo }}"
+                    data-val="{{ '1' if r[campo] else '0' }}"
+                    style="{{ 'background:' + color + ';border-color:' + color if r[campo] else '' }}">
+                {% if r[campo] %}<i class="bi bi-check-lg" style="font-size:.85rem;"></i>{% endif %}
+            </button>
+            <i class="bi bi-{{ icon }}" style="color:{{ color }}; font-size:1.1rem;"></i>
+            <span style="font-size:.9rem; {{ 'text-decoration:line-through;opacity:.5;' if r[campo] else '' }}">{{ label }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Cambiar estado -->
+<div class="section-label">Estado del remate</div>
+<div class="card mb-3">
+    <div class="card-body px-3 py-3">
+        <div class="d-flex gap-2 flex-wrap">
+            {% for e in ESTADOS %}
+            <form method="post" action="/remate/{{ r.id }}/estado" style="margin:0;">
+                <input type="hidden" name="estado" value="{{ e }}">
+                <button type="submit" class="btn btn-sm {{ 'btn-success' if r.estado == e else 'btn-outline-secondary' }}"
+                        style="border-radius:20px; font-size:.75rem; padding:5px 14px;">
+                    {{ STATUS_LABELS[e] }}
+                </button>
+            </form>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- Transmisión -->
+{% if r.transmision_nombre or r.transmision_plataforma %}
+<div class="section-label">Transmisión en vivo</div>
+<div class="card mb-3">
+    <div class="card-body px-3 py-2">
+        <div class="info-row">
+            <span class="lbl"><i class="bi bi-person me-1"></i>Transmisor</span>
+            <span class="val">{{ r.transmision_nombre or '—' }}</span>
+        </div>
+        {% if r.transmision_plataforma %}
+        <div class="info-row">
+            <span class="lbl"><i class="bi bi-display me-1"></i>Plataforma</span>
+            <span class="val">{{ r.transmision_plataforma }}</span>
+        </div>
+        {% endif %}
+        {% if r.transmision_url %}
+        <div class="info-row">
+            <span class="lbl"><i class="bi bi-link-45deg me-1"></i>URL</span>
+            <span class="val"><a href="{{ r.transmision_url }}" target="_blank" class="text-success" style="word-break:break-all;">{{ r.transmision_url }}</a></span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Retransmisión -->
+{% if r.retransmision_nombre or r.retransmision_plataforma %}
+<div class="section-label">Retransmisión</div>
+<div class="card mb-3">
+    <div class="card-body px-3 py-2">
+        <div class="info-row">
+            <span class="lbl"><i class="bi bi-person me-1"></i>Retransmisor</span>
+            <span class="val">{{ r.retransmision_nombre or '—' }}</span>
+        </div>
+        {% if r.retransmision_plataforma %}
+        <div class="info-row">
+            <span class="lbl"><i class="bi bi-display me-1"></i>Plataforma</span>
+            <span class="val">{{ r.retransmision_plataforma }}</span>
+        </div>
+        {% endif %}
+        {% if r.retransmision_url %}
+        <div class="info-row">
+            <span class="lbl"><i class="bi bi-link-45deg me-1"></i>URL</span>
+            <span class="val"><a href="{{ r.retransmision_url }}" target="_blank" class="text-success" style="word-break:break-all;">{{ r.retransmision_url }}</a></span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Catálogo -->
+{% if r.catalogo_descripcion or r.catalogo_url or r.cantidad_lotes %}
+<div class="section-label">Catálogo</div>
+<div class="card mb-3">
+    <div class="card-body px-3 py-2">
+        {% if r.cantidad_lotes %}
+        <div class="info-row">
+            <span class="lbl"><i class="bi bi-boxes me-1"></i>Lotes</span>
+            <span class="val">{{ r.cantidad_lotes }}</span>
+        </div>
+        {% endif %}
+        {% if r.catalogo_descripcion %}
+        <div class="info-row">
+            <span class="lbl"><i class="bi bi-text-left me-1"></i>Descripción</span>
+            <span class="val" style="white-space:pre-line;">{{ r.catalogo_descripcion }}</span>
+        </div>
+        {% endif %}
+        {% if r.catalogo_url %}
+        <div class="info-row">
+            <span class="lbl"><i class="bi bi-link-45deg me-1"></i>Link</span>
+            <span class="val"><a href="{{ r.catalogo_url }}" target="_blank" class="text-success" style="word-break:break-all;">Ver catálogo</a></span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Fotos y Videos -->
+{% if r.fecha_fotos or r.fecha_videos %}
+<div class="section-label">Fotos y Videos</div>
+<div class="card mb-3">
+    <div class="card-body px-3 py-2">
+        {% if r.fecha_fotos %}
+        <div class="info-row">
+            <span class="lbl"><i class="bi bi-camera me-1" style="color:#6f42c1;"></i>Fotos</span>
+            <span class="val">
+                {{ r.fecha_fotos | fecha_legible }}
+                {% if r.responsable_fotos %}<div class="text-muted" style="font-size:.78rem;">{{ r.responsable_fotos }}</div>{% endif %}
+            </span>
+        </div>
+        {% endif %}
+        {% if r.fecha_videos %}
+        <div class="info-row">
+            <span class="lbl"><i class="bi bi-camera-video me-1" style="color:#e83e8c;"></i>Videos</span>
+            <span class="val">
+                {{ r.fecha_videos | fecha_legible }}
+                {% if r.responsable_videos %}<div class="text-muted" style="font-size:.78rem;">{{ r.responsable_videos }}</div>{% endif %}
+            </span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Notas -->
+{% if r.notas %}
+<div class="section-label">Notas</div>
+<div class="card mb-3">
+    <div class="card-body px-3 py-3" style="font-size:.9rem; white-space:pre-line; color:#495057;">{{ r.notas }}</div>
+</div>
+{% endif %}
+
+<!-- Meta -->
+<div class="text-muted text-center mb-4" style="font-size:.7rem;">
+    Creado {{ r.created_at | fecha_legible }} · Actualizado {{ r.updated_at | fecha_legible }}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleCheck(campo, btn) {
+    const rid = btn.dataset.rid;
+    const currentVal = btn.dataset.val === '1' ? '1' : '0';
+    const newVal = currentVal === '1' ? '0' : '1';
+
+    fetch(`/remate/${rid}/checklist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `campo=${campo}&valor=${newVal}`
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            btn.dataset.val = newVal;
+            const isDone = newVal === '1';
+            btn.classList.toggle('done', isDone);
+            btn.innerHTML = isDone ? '<i class="bi bi-check-lg" style="font-size:.85rem;"></i>' : '';
+            // strike text
+            const row = btn.closest('.d-flex');
+            const txt = row.querySelector('span:last-child');
+            if (txt) txt.style.cssText = isDone ? 'text-decoration:line-through;opacity:.5;' : '';
+            // color
+            const colors = {
+                transmision_configurada:'#0d6efd', catalogo_listo:'#fd7e14',
+                fotos_listas:'#6f42c1', videos_listos:'#e83e8c'
+            };
+            const c = colors[campo] || '#198754';
+            btn.style.cssText = isDone ? `background:${c};border-color:${c}` : '';
+        }
+    });
+}
+</script>
+{% endblock %}

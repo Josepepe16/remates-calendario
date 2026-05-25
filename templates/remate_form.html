@@ -1,0 +1,331 @@
+{% extends "base.html" %}
+{% block title %}{{ accion }}{% endblock %}
+
+{% block top_right %}
+<a href="{{ '/remate/' + remate.id|string if remate else '/remates' }}" class="text-muted text-decoration-none">
+    <i class="bi bi-x-lg" style="font-size:1.2rem;"></i>
+</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .form-label { font-size:.78rem; font-weight:600; color:#495057; margin-bottom:4px; }
+    .form-control, .form-select {
+        border-radius:10px; border-color:#dee2e6;
+        font-size:.9rem; padding:10px 14px;
+    }
+    .form-control:focus, .form-select:focus {
+        border-color:#198754; box-shadow:0 0 0 3px rgba(25,135,84,.12);
+    }
+    .section-card { background:#fff; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,.07); margin-bottom:12px; }
+    .section-card .section-head {
+        padding:14px 16px; font-weight:700; font-size:.9rem;
+        border-bottom:1px solid #f0f0f0; cursor:pointer;
+        display:flex; align-items:center; justify-content:space-between;
+    }
+    .section-card .section-body { padding:16px; }
+    .btn-guardar {
+        position:sticky; bottom:72px; z-index:800;
+        width:100%; border-radius:14px; padding:14px;
+        font-size:1rem; font-weight:700;
+        box-shadow:0 4px 16px rgba(25,135,84,.3);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-title mt-3 mb-3">{{ accion }}</div>
+
+<form method="post" action="{{ '/remate/' + remate.id|string + '/editar' if remate else '/remate/nuevo' }}">
+
+    <!-- Datalists for autocomplete -->
+    <datalist id="list-nombres">
+        {% for n in nombres %}<option value="{{ n }}">{% endfor %}
+    </datalist>
+    <datalist id="list-lugares">
+        {% for l in lugares %}<option value="{{ l }}">{% endfor %}
+    </datalist>
+
+    <!-- ① Datos básicos -->
+    <div class="section-card">
+        <div class="section-head" onclick="toggleSection('sec-basico', this)">
+            <span><i class="bi bi-clipboard2-data me-2 text-success"></i>Datos del Remate</span>
+            <i class="bi bi-chevron-up"></i>
+        </div>
+        <div class="section-body" id="sec-basico">
+            <div class="mb-3">
+                <label class="form-label">Título *</label>
+                <input type="text" name="titulo" class="form-control" required
+                       placeholder="Ej: Remate de hacienda — Estancia Las Piedras"
+                       value="{{ remate.titulo if remate else '' }}">
+            </div>
+            <div class="row g-2 mb-3">
+                <div class="col-7">
+                    <label class="form-label">Fecha del remate *</label>
+                    <input type="date" name="fecha_remate" class="form-control" required
+                           value="{{ (remate.fecha_remate[:10]) if remate and remate.fecha_remate else '' }}">
+                </div>
+                <div class="col-5">
+                    <label class="form-label">Hora</label>
+                    <input type="time" name="hora_remate" class="form-control"
+                           value="{{ remate.fecha_remate[11:16] if remate and remate.fecha_remate and 'T' in remate.fecha_remate else '' }}">
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Lugar</label>
+                <input type="text" name="lugar" class="form-control" list="list-lugares"
+                       placeholder="Ej: Predio ferial, campo, galpón..."
+                       value="{{ remate.lugar or '' if remate else '' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Establecimiento / Nombre del campo</label>
+                <input type="text" name="establecimiento" class="form-control"
+                       placeholder="Ej: Estancia Don Pedro"
+                       value="{{ remate.establecimiento or '' if remate else '' }}">
+            </div>
+            <div class="row g-2 mb-3">
+                <div class="col-7">
+                    <label class="form-label">Ciudad / Localidad</label>
+                    <input type="text" name="ciudad" class="form-control"
+                           placeholder="Ciudad"
+                           value="{{ remate.ciudad or '' if remate else '' }}">
+                </div>
+                <div class="col-5">
+                    <label class="form-label">Departamento</label>
+                    <input type="text" name="provincia" class="form-control"
+                           placeholder="Dto."
+                           value="{{ remate.provincia or '' if remate else '' }}">
+                </div>
+            </div>
+            <div class="mb-1">
+                <label class="form-label">Estado</label>
+                <select name="estado" class="form-select">
+                    {% for e in ESTADOS %}
+                    <option value="{{ e }}" {{ 'selected' if remate and remate.estado == e else ('' if remate else ('selected' if e == 'programado' else '')) }}>
+                        {{ STATUS_LABELS[e] }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- ② Transmisión -->
+    <div class="section-card">
+        <div class="section-head" onclick="toggleSection('sec-tx', this)">
+            <span><i class="bi bi-broadcast me-2" style="color:#0d6efd;"></i>Transmisión en vivo</span>
+            <i class="bi bi-chevron-down"></i>
+        </div>
+        <div class="section-body d-none" id="sec-tx">
+            <div class="mb-3">
+                <label class="form-label">Nombre del transmisor</label>
+                <input type="text" name="transmision_nombre" class="form-control" list="list-nombres"
+                       placeholder="Nombre / empresa"
+                       value="{{ remate.transmision_nombre or '' if remate else '' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Plataforma</label>
+                <select name="transmision_plataforma" class="form-select">
+                    <option value="">— Seleccionar —</option>
+                    {% for p in PLATAFORMAS %}
+                    <option value="{{ p }}" {{ 'selected' if remate and remate.transmision_plataforma == p else '' }}>{{ p }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-1">
+                <label class="form-label">URL del stream</label>
+                <input type="url" name="transmision_url" class="form-control"
+                       placeholder="https://..."
+                       value="{{ remate.transmision_url or '' if remate else '' }}">
+            </div>
+        </div>
+    </div>
+
+    <!-- ③ Retransmisión -->
+    <div class="section-card">
+        <div class="section-head" onclick="toggleSection('sec-rtx', this)">
+            <span><i class="bi bi-arrow-repeat me-2" style="color:#6f42c1;"></i>Retransmisión</span>
+            <i class="bi bi-chevron-down"></i>
+        </div>
+        <div class="section-body d-none" id="sec-rtx">
+            <div class="mb-3">
+                <label class="form-label">Nombre del retransmisor</label>
+                <input type="text" name="retransmision_nombre" class="form-control" list="list-nombres"
+                       placeholder="Nombre / empresa"
+                       value="{{ remate.retransmision_nombre or '' if remate else '' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Plataforma</label>
+                <select name="retransmision_plataforma" class="form-select">
+                    <option value="">— Seleccionar —</option>
+                    {% for p in PLATAFORMAS %}
+                    <option value="{{ p }}" {{ 'selected' if remate and remate.retransmision_plataforma == p else '' }}>{{ p }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-1">
+                <label class="form-label">URL de retransmisión</label>
+                <input type="url" name="retransmision_url" class="form-control"
+                       placeholder="https://..."
+                       value="{{ remate.retransmision_url or '' if remate else '' }}">
+            </div>
+        </div>
+    </div>
+
+    <!-- ④ Catálogo -->
+    <div class="section-card">
+        <div class="section-head" onclick="toggleSection('sec-cat', this)">
+            <span><i class="bi bi-book me-2 text-warning"></i>Catálogo</span>
+            <i class="bi bi-chevron-down"></i>
+        </div>
+        <div class="section-body d-none" id="sec-cat">
+            <div class="mb-3">
+                <label class="form-label">Descripción del catálogo</label>
+                <textarea name="catalogo_descripcion" class="form-control" rows="3"
+                          placeholder="Descripción de lotes, animales, bienes...">{{ remate.catalogo_descripcion or '' if remate else '' }}</textarea>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">URL del catálogo</label>
+                <input type="url" name="catalogo_url" class="form-control"
+                       placeholder="https://..."
+                       value="{{ remate.catalogo_url or '' if remate else '' }}">
+            </div>
+            <div class="mb-1">
+                <label class="form-label">Cantidad de lotes</label>
+                <input type="number" name="cantidad_lotes" class="form-control" min="0"
+                       placeholder="0"
+                       value="{{ remate.cantidad_lotes or '' if remate else '' }}">
+            </div>
+        </div>
+    </div>
+
+    <!-- ⑤ Fotos y Videos -->
+    <div class="section-card">
+        <div class="section-head" onclick="toggleSection('sec-media', this)">
+            <span><i class="bi bi-camera me-2" style="color:#e83e8c;"></i>Fotos y Videos</span>
+            <i class="bi bi-chevron-down"></i>
+        </div>
+        <div class="section-body d-none" id="sec-media">
+            <div class="mb-3 pb-3 border-bottom">
+                <div class="fw-600 mb-2" style="font-size:.85rem;">📷 Sesión de fotos</div>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label">Fecha</label>
+                        <input type="date" name="fecha_fotos" class="form-control"
+                               value="{{ remate.fecha_fotos[:10] if remate and remate.fecha_fotos else '' }}">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Hora</label>
+                        <input type="time" name="hora_fotos" class="form-control"
+                               value="{{ remate.fecha_fotos[11:16] if remate and remate.fecha_fotos and 'T' in remate.fecha_fotos else '' }}">
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <label class="form-label">Responsable de fotos</label>
+                    <input type="text" name="responsable_fotos" class="form-control" list="list-nombres"
+                           placeholder="Nombre del fotógrafo"
+                           value="{{ remate.responsable_fotos or '' if remate else '' }}">
+                </div>
+            </div>
+            <div class="mt-3">
+                <div class="fw-600 mb-2" style="font-size:.85rem;">🎥 Sesión de videos</div>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label">Fecha</label>
+                        <input type="date" name="fecha_videos" class="form-control"
+                               value="{{ remate.fecha_videos[:10] if remate and remate.fecha_videos else '' }}">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Hora</label>
+                        <input type="time" name="hora_videos" class="form-control"
+                               value="{{ remate.fecha_videos[11:16] if remate and remate.fecha_videos and 'T' in remate.fecha_videos else '' }}">
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <label class="form-label">Responsable de videos</label>
+                    <input type="text" name="responsable_videos" class="form-control" list="list-nombres"
+                           placeholder="Nombre del camarógrafo"
+                           value="{{ remate.responsable_videos or '' if remate else '' }}">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ⑥ Notas -->
+    <div class="section-card">
+        <div class="section-head" onclick="toggleSection('sec-notas', this)">
+            <span><i class="bi bi-sticky me-2 text-secondary"></i>Notas adicionales</span>
+            <i class="bi bi-chevron-down"></i>
+        </div>
+        <div class="section-body d-none" id="sec-notas">
+            <textarea name="notas" class="form-control" rows="4"
+                      placeholder="Observaciones, detalles logísticos, contactos...">{{ remate.notas or '' if remate else '' }}</textarea>
+        </div>
+    </div>
+
+    <!-- Save button -->
+    <button type="submit" class="btn btn-success btn-guardar mb-3">
+        <i class="bi bi-check-lg me-2"></i>Guardar Remate
+    </button>
+
+</form>
+
+{% if remate %}
+<div class="text-center mb-4">
+    <form method="post" action="/remate/{{ remate.id }}/eliminar"
+          onsubmit="return confirm('¿Eliminar este remate? Esta acción no se puede deshacer.')">
+        <button type="submit" class="btn btn-outline-danger btn-sm">
+            <i class="bi bi-trash me-1"></i>Eliminar remate
+        </button>
+    </form>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleSection(id, header) {
+    const body = document.getElementById(id);
+    const icon = header.querySelector('i.bi-chevron-up, i.bi-chevron-down');
+    body.classList.toggle('d-none');
+    icon.classList.toggle('bi-chevron-up');
+    icon.classList.toggle('bi-chevron-down');
+}
+
+// Auto-open section if it has values (edit mode)
+document.addEventListener('DOMContentLoaded', function() {
+    const secs = [
+        { id: 'sec-tx', fields: ['transmision_nombre','transmision_plataforma','transmision_url'] },
+        { id: 'sec-rtx', fields: ['retransmision_nombre','retransmision_plataforma','retransmision_url'] },
+        { id: 'sec-cat', fields: ['catalogo_descripcion','catalogo_url','cantidad_lotes'] },
+        { id: 'sec-media', fields: ['fecha_fotos','responsable_fotos','fecha_videos','responsable_videos'] },
+        { id: 'sec-notas', fields: ['notas'] },
+    ];
+    secs.forEach(s => {
+        const hasValue = s.fields.some(f => {
+            const el = document.querySelector(`[name="${f}"]`);
+            return el && el.value.trim() !== '';
+        });
+        if (hasValue) {
+            const body = document.getElementById(s.id);
+            const header = body.previousElementSibling;
+            body.classList.remove('d-none');
+            const icon = header.querySelector('i');
+            if (icon) { icon.classList.remove('bi-chevron-down'); icon.classList.add('bi-chevron-up'); }
+        }
+    });
+
+    // Combine fecha + hora for fotos/videos before submit
+    document.querySelector('form').addEventListener('submit', function() {
+        ['fotos', 'videos'].forEach(type => {
+            const dateEl = document.querySelector(`[name="fecha_${type}"]`);
+            const timeEl = document.querySelector(`[name="hora_${type}"]`);
+            if (dateEl && timeEl && dateEl.value && timeEl.value) {
+                dateEl.value = dateEl.value + 'T' + timeEl.value;
+            }
+        });
+    });
+});
+</script>
+{% endblock %}
