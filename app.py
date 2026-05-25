@@ -47,6 +47,16 @@ def hash_password(pwd):
 
 def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
+    # Limpieza única: borra importación inicial si existe el flag
+    flag = os.path.join(DATA_DIR, '.clear_import_v1')
+    if not os.path.exists(flag):
+        try:
+            with get_db() as db:
+                db.execute('DELETE FROM remates')
+                db.commit()
+        except Exception:
+            pass
+        open(flag, 'w').close()
     with get_db() as db:
         db.executescript('''
             CREATE TABLE IF NOT EXISTS usuarios (
@@ -344,33 +354,73 @@ def api_eventos():
     return jsonify(eventos)
 
 
+MESES = {
+    1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril',
+    5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto',
+    9: 'Setiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre',
+}
+
+
 @app.route('/remates')
 @login_required
 def remates():
     estado_filtro = request.args.get('estado', 'todos')
+    mes_filtro = request.args.get('mes', 'todos')
     q = request.args.get('q', '').strip()
+
     with get_db() as db:
         sql = 'SELECT * FROM remates WHERE 1=1'
         params = []
         if estado_filtro != 'todos':
             sql += ' AND estado=?'
             params.append(estado_filtro)
+        if mes_filtro != 'todos':
+            sql += " AND strftime('%m', fecha_remate) = ?"
+            params.append(mes_filtro.zfill(2))
         if q:
-            sql += ' AND (titulo LIKE ? OR lugar LIKE ? OR ciudad LIKE ?)'
-            params += [f'%{q}%', f'%{q}%', f'%{q}%']
-        sql += ' ORDER BY fecha_remate DESC'
+            sql += ' AND (titulo LIKE ? OR lugar LIKE ? OR ciudad LIKE ? OR establecimiento LIKE ?)'
+            params += [f'%{q}%'] * 4
+        sql += ' ORDER BY fecha_remate ASC'
         rows = db.execute(sql, params).fetchall()
+
+        # Contar por estado
         counts = {'todos': 0}
         for estado in ESTADOS:
             c = db.execute('SELECT COUNT(*) as cnt FROM remates WHERE estado=?', (estado,)).fetchone()
             counts[estado] = c['cnt']
             counts['todos'] += c['cnt']
+
+        # Meses con remates (para los filtros)
+        meses_con_remates = db.execute(
+            "SELECT DISTINCT CAST(strftime('%m', fecha_remate) AS INTEGER) as mes, "
+            "CAST(strftime('%Y', fecha_remate) AS INTEGER) as anio "
+            "FROM remates ORDER BY fecha_remate ASC"
+        ).fetchall()
+
+    # Agrupar por mes/año
+    from collections import OrderedDict
+    grupos = OrderedDict()
+    for r in rows:
+        try:
+            dt = datetime.fromisoformat(r['fecha_remate'].replace('Z', ''))
+            clave = (dt.year, dt.month)
+            label = f'{MESES[dt.month]} {dt.year}'
+        except Exception:
+            clave = (0, 0)
+            label = 'Sin fecha'
+        if clave not in grupos:
+            grupos[clave] = {'label': label, 'remates': []}
+        grupos[clave]['remates'].append(r)
+
     return render_template(
         'remates.html',
-        remates=rows,
+        grupos=grupos,
         estado_filtro=estado_filtro,
+        mes_filtro=mes_filtro,
         counts=counts,
         q=q,
+        meses_con_remates=meses_con_remates,
+        MESES=MESES,
         active_page='remates',
         STATUS_LABELS=STATUS_LABELS,
     )
@@ -626,67 +676,8 @@ def dias_restantes(value):
         return ''
 
 
-def import_remates_iniciales():
-    """Carga los remates del PDF solo si la BD está vacía."""
-    with get_db() as db:
-        if db.execute('SELECT COUNT(*) FROM remates').fetchone()[0] > 0:
-            return
-        now = datetime.now().isoformat()
-        remates = [
-            # JUNIO 2026
-            ("Recuperacion — Gran Reserva",  "2026-06-07",       "Mercado", "PDF: Miercoles 7. Datos a completar."),
-            ("Lote 21",                       "2026-06-08",       "Mercado", "PDF: Jueves 8 y Viernes 9."),
-            ("Don Latorre",                   "2026-06-11T07:30", "Mercado", "PDF: Lunes 11. QRC — PAISA. Hora: 07:30. Tel: 072 335."),
-            ("Caballos de Raza",              "2026-06-12",       None,      "PDF: Jueves 12. Datos a completar."),
-            ("Colonia de Vacaciones",         "2026-06-19T13:30", "Mercado", "PDF: Jueves 19. PAISA. Hora: 13:30. Tel: 072 335."),
-            ("Lote 21",                       "2026-06-23",       "Mercado", "PDF: Martes 23 y Miercoles 24."),
-            # JULIO 2026
-            ("Mercado julio (nombre a completar)", "2026-07-08T10:30", "Mercado", "PDF: Miercoles 8. Nombre no legible. PAISA. Hora: 10:30. Tel: 072 315."),
-            ("Abraje de Servicios",           "2026-07-15",       None,      "PDF: 15/7. Datos a completar."),
-            ("Lote 21",                       "2026-07-15",       "Mercado", "PDF: Miercoles 15."),
-            # AGOSTO 2026
-            ("Agosto mercado (nombre a completar)", "2026-08-01", "Mercado", "PDF: inicio agosto, nombre no legible. Tel: 072 305."),
-            ("Nalez",                         "2026-08-04",       None,      "PDF: 4/8. Datos a completar."),
-            ("Mercado — agosto",              "2026-08-06",       "Mercado", "PDF: Miercoles 6."),
-            ("Lote 21",                       "2026-08-13",       "Mercado", "PDF: Miercoles 13 y Jueves 14."),
-            ("Madres Nuevas",                 "2026-08-27",       None,      "PDF: 27/8. Datos a completar."),
-            # SETIEMBRE 2026
-            ("Neo Perez",                     "2026-09-05",       None,      "PDF: 5/9. Datos a completar."),
-            ("Prendi",                        "2026-09-11",       None,      "PDF: 11 al 20 de setiembre."),
-            ("Exposicion (fecha a confirmar)","2026-09-09",       None,      "PDF: fecha a confirmar."),
-            ("CDEL Gustavo Prendi",           "2026-09-16",       "Mercado", "PDF: Miercoles 16 y Jueves 17."),
-            # OCTUBRE 2026
-            ("Nacional de 4S",               "2026-10-09",       None,      "PDF: Sabado 9. Datos a completar."),
-            ("Lote 21",                      "2026-10-01",       "Mercado", "PDF: Jueves inicio octubre. Verificar fecha."),
-            ("Expl San Jose",                "2026-10-06",       "Mercado", "PDF: Lunes 6. Tel: 1450 1396 / 149 572 + comision."),
-            ("Pasturas (a confirmar)",        "2026-10-17",       None,      "PDF: Viernes 17 — fecha a confirmar desde el dia 4."),
-            ("Especial Hembras Maldonado",   "2026-10-21",       "Mercado", "PDF: Jueves 21 al ~29."),
-            # NOVIEMBRE 2026
-            ("Sale",                         "2026-11-05",       "Mercado", "PDF: Miercoles 5. Tel: 072 215."),
-            ("Noviembre mercado (nombre a completar)", "2026-11-03", "Mercado", "PDF: Lunes 3. ESTELA 20:30. Tel: 072 212."),
-            ("Servicio (nombre a completar)", "2026-11-12",       "Mercado", "PDF: Miercoles 12. ESTELA 20:30. Tel: 072 212."),
-            ("Lote 21",                      "2026-11-19",       "Mercado", "PDF: Miercoles 19."),
-            ("Premium International",        "2026-11-22",       "Mercado", "PDF: Sabado 22. Nombre completo no legible."),
-            ("Especial de Vacunos",          "2026-11-28",       "Mercado", "PDF: Viernes 28. ESTELA 10. Tel: 072 212."),
-            # DICIEMBRE 2026
-            ("Sale",                         "2026-12-02",       "Mercado", "PDF: Miercoles 2."),
-            ("Lincoln",                      "2026-12-07",       None,      "PDF: 7/12. Datos a completar."),
-            ("Clunell Ate",                  "2026-12-10",       None,      "PDF: 10/12. Datos a completar."),
-            ("Sale",                         "2026-12-15",       "Mercado", "PDF: Martes 15."),
-        ]
-        for titulo, fecha, lugar, notas in remates:
-            db.execute(
-                'INSERT INTO remates (titulo, fecha_remate, lugar, notas, estado, created_at, updated_at) '
-                'VALUES (?,?,?,?,?,?,?)',
-                (titulo, fecha, lugar, notas, 'programado', now, now)
-            )
-        db.commit()
-
-
 if __name__ == '__main__':
     init_db()
-    import_remates_iniciales()
     app.run(debug=True, host='0.0.0.0', port=5001)
 
 init_db()
-import_remates_iniciales()

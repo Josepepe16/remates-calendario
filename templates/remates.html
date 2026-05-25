@@ -2,92 +2,174 @@
 {% block title %}Remates{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mt-3 mb-2">
-    <div class="page-title">Todos los Remates</div>
+<div class="d-flex align-items-center justify-content-between mt-3 mb-3">
+    <div class="page-title">Remates</div>
+    <span class="text-muted" style="font-size:.8rem;">{{ counts.todos }} total</span>
 </div>
 
-<!-- Search -->
-<form method="get" action="/remates" class="mb-3">
+<!-- Buscador -->
+<form method="get" action="/remates" id="form-filtros">
     <input type="hidden" name="estado" value="{{ estado_filtro }}">
-    <div class="input-group">
-        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-        <input type="text" name="q" value="{{ q }}" class="form-control border-start-0 ps-0"
-               placeholder="Buscar remate..." style="border-radius:0 12px 12px 0;">
+    <input type="hidden" name="mes" value="{{ mes_filtro }}">
+    <div class="input-group mb-3">
+        <span class="input-group-text bg-white border-end-0" style="border-radius:12px 0 0 12px;">
+            <i class="bi bi-search text-muted"></i>
+        </span>
+        <input type="text" name="q" id="input-q" value="{{ q }}"
+               class="form-control border-start-0 ps-0"
+               placeholder="Buscar por nombre, lugar, ciudad..."
+               style="border-radius:0 12px 12px 0;"
+               oninput="document.getElementById('form-filtros').submit()">
         {% if q %}
-        <a href="/remates?estado={{ estado_filtro }}" class="btn btn-outline-secondary" style="border-radius:0 12px 12px 0;">
+        <a href="/remates?estado={{ estado_filtro }}&mes={{ mes_filtro }}"
+           class="btn btn-outline-secondary ms-1" style="border-radius:10px;">
             <i class="bi bi-x-lg"></i>
         </a>
         {% endif %}
     </div>
 </form>
 
-<!-- Estado filter pills -->
-<div class="d-flex gap-2 mb-3 overflow-auto pb-1" style="scrollbar-width:none;">
-    {% set filtros = [('todos','Todos'), ('programado','Programados'), ('en_progreso','En curso'), ('finalizado','Finalizados'), ('cancelado','Cancelados')] %}
-    {% for val, lbl in filtros %}
-    <a href="/remates?estado={{ val }}{% if q %}&q={{ q }}{% endif %}"
-       class="badge text-decoration-none flex-shrink-0"
-       style="font-size:.75rem; padding:7px 14px; border-radius:20px;
-              background:{{ '#198754' if estado_filtro == val else '#e9ecef' }};
-              color:{{ '#fff' if estado_filtro == val else '#495057' }};">
-        {{ lbl }} <span style="opacity:.7;">({{ counts[val] }})</span>
+<!-- Filtro por estado -->
+<div class="d-flex gap-2 mb-2 overflow-auto pb-1" style="scrollbar-width:none; -webkit-overflow-scrolling:touch;">
+    {% set estados_filtro = [('todos','Todos'), ('programado','Programados'), ('en_progreso','En curso'), ('finalizado','Finalizados'), ('cancelado','Cancelados')] %}
+    {% for val, lbl in estados_filtro %}
+    <a href="/remates?estado={{ val }}&mes={{ mes_filtro }}{% if q %}&q={{ q }}{% endif %}"
+       class="flex-shrink-0"
+       style="text-decoration:none; display:inline-block; font-size:.72rem; font-weight:600;
+              padding:5px 13px; border-radius:20px;
+              background:{{ '#198754' if estado_filtro == val else '#f0f0f0' }};
+              color:{{ '#fff' if estado_filtro == val else '#555' }};">
+        {{ lbl }}{% if val != 'todos' and counts[val] > 0 %} <span style="opacity:.75">({{ counts[val] }})</span>{% endif %}
     </a>
     {% endfor %}
 </div>
 
-<!-- List -->
-{% if remates %}
-{% for r in remates %}
-<a href="/remate/{{ r.id }}" style="text-decoration:none; color:inherit;">
-    <div class="card card-remate mb-2">
-        <div class="card-body py-3 px-3">
-            <div class="d-flex align-items-start justify-content-between gap-2">
-                <div style="flex:1; min-width:0;">
-                    <div style="font-weight:700; font-size:.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                        {{ r.titulo }}
-                    </div>
-                    <div class="text-muted mt-1" style="font-size:.78rem; display:flex; flex-wrap:wrap; gap:8px;">
-                        <span><i class="bi bi-calendar3 me-1"></i>{{ r.fecha_remate | fecha_legible }}</span>
-                        {% if r.lugar or r.ciudad %}
-                        <span><i class="bi bi-geo-alt me-1"></i>{{ [r.lugar, r.ciudad] | select | join(', ') }}</span>
-                        {% endif %}
-                    </div>
-                    {% if r.transmision_nombre %}
-                    <div class="text-muted mt-1" style="font-size:.78rem;">
-                        <i class="bi bi-broadcast me-1"></i>{{ r.transmision_nombre }}
-                        {% if r.retransmision_nombre %}<span class="mx-1">·</span><i class="bi bi-arrow-repeat me-1"></i>{{ r.retransmision_nombre }}{% endif %}
-                    </div>
-                    {% endif %}
-                </div>
-                <div class="text-end flex-shrink-0">
-                    <span class="badge badge-{{ r.estado }}" style="font-size:.68rem;">{{ STATUS_LABELS[r.estado] }}</span>
-                    <div class="text-muted mt-1" style="font-size:.7rem;">{{ r.fecha_remate | dias_restantes }}</div>
-                </div>
-            </div>
-            <!-- Progress dots -->
-            <div class="d-flex gap-1 mt-2">
-                <span title="Transmisión" style="width:8px;height:8px;border-radius:50%;background:{{ '#198754' if r.transmision_configurada else '#dee2e6' }};display:inline-block;"></span>
-                <span title="Catálogo" style="width:8px;height:8px;border-radius:50%;background:{{ '#198754' if r.catalogo_listo else '#dee2e6' }};display:inline-block;"></span>
-                <span title="Fotos" style="width:8px;height:8px;border-radius:50%;background:{{ '#6f42c1' if r.fotos_listas else '#dee2e6' }};display:inline-block;"></span>
-                <span title="Videos" style="width:8px;height:8px;border-radius:50%;background:{{ '#e83e8c' if r.videos_listos else '#dee2e6' }};display:inline-block;"></span>
+<!-- Filtro por mes -->
+{% if meses_con_remates %}
+<div class="d-flex gap-2 mb-3 overflow-auto pb-1" style="scrollbar-width:none; -webkit-overflow-scrolling:touch;">
+    <a href="/remates?estado={{ estado_filtro }}&mes=todos{% if q %}&q={{ q }}{% endif %}"
+       class="flex-shrink-0"
+       style="text-decoration:none; display:inline-block; font-size:.72rem; font-weight:600;
+              padding:5px 13px; border-radius:20px;
+              background:{{ '#0d6efd' if mes_filtro == 'todos' else '#e9ecef' }};
+              color:{{ '#fff' if mes_filtro == 'todos' else '#555' }};">
+        Todos los meses
+    </a>
+    {% for m in meses_con_remates %}
+    {% set m_str = m.mes|string %}
+    <a href="/remates?estado={{ estado_filtro }}&mes={{ m.mes }}{% if q %}&q={{ q }}{% endif %}"
+       class="flex-shrink-0"
+       style="text-decoration:none; display:inline-block; font-size:.72rem; font-weight:600;
+              padding:5px 13px; border-radius:20px;
+              background:{{ '#0d6efd' if mes_filtro == m_str or mes_filtro == m.mes|string else '#e9ecef' }};
+              color:{{ '#fff' if mes_filtro == m_str or mes_filtro == m.mes|string else '#555' }};">
+        {{ MESES[m.mes] }}
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Lista agrupada por mes -->
+{% if grupos %}
+    {% for (anio, mes), grupo in grupos.items() %}
+
+    <!-- Encabezado de mes -->
+    <div class="d-flex align-items-center gap-3 mb-2 mt-3">
+        <div style="flex-shrink:0;">
+            <div style="background:#198754; color:#fff; border-radius:12px; padding:6px 14px; text-align:center; min-width:70px;">
+                <div style="font-size:1rem; font-weight:800; line-height:1;">{{ MESES[mes][:3].upper() }}</div>
+                <div style="font-size:.7rem; opacity:.85;">{{ anio }}</div>
             </div>
         </div>
+        <div style="flex:1; height:2px; background:linear-gradient(to right,#19875440,transparent); border-radius:2px;"></div>
+        <div style="font-size:.75rem; color:#6c757d; flex-shrink:0;">{{ grupo.remates|length }} remate{{ 's' if grupo.remates|length != 1 else '' }}</div>
     </div>
-</a>
-{% endfor %}
+
+    <!-- Remates del mes -->
+    {% for r in grupo.remates %}
+    <a href="/remate/{{ r.id }}" style="text-decoration:none; color:inherit;">
+        <div class="card card-remate mb-2">
+            <div class="card-body py-3 px-3">
+                <div class="d-flex align-items-start justify-content-between gap-2">
+                    <!-- Fecha cuadro -->
+                    <div style="flex-shrink:0; text-align:center; width:42px;">
+                        {% set dia = r.fecha_remate[8:10] if r.fecha_remate|length >= 10 else '?' %}
+                        <div style="font-size:1.3rem; font-weight:800; color:#212529; line-height:1;">{{ dia }}</div>
+                        <div style="font-size:.65rem; color:#6c757d; text-transform:uppercase; font-weight:600;">
+                            {{ r.fecha_remate | fecha_corta }}
+                        </div>
+                    </div>
+                    <!-- Divisor vertical -->
+                    <div style="width:2px; background:#e9ecef; border-radius:2px; align-self:stretch; flex-shrink:0;"></div>
+                    <!-- Info -->
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-weight:700; font-size:.92rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                            {{ r.titulo }}
+                        </div>
+                        {% if r.establecimiento %}
+                        <div class="text-muted mt-1" style="font-size:.76rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                            <i class="bi bi-building me-1"></i>{{ r.establecimiento }}
+                        </div>
+                        {% endif %}
+                        {% if r.lugar or r.ciudad %}
+                        <div class="text-muted mt-1" style="font-size:.76rem;">
+                            <i class="bi bi-geo-alt me-1"></i>{{ [r.lugar, r.ciudad] | select | join(', ') }}
+                        </div>
+                        {% endif %}
+                        {% if r.transmision_nombre %}
+                        <div class="text-muted mt-1" style="font-size:.76rem;">
+                            <i class="bi bi-broadcast me-1"></i>{{ r.transmision_nombre }}
+                            {% if r.transmision_plataforma %}
+                            <span class="badge ms-1" style="background:#f0f0f0;color:#555;font-size:.62rem;">{{ r.transmision_plataforma }}</span>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    <!-- Estado y días -->
+                    <div class="text-end" style="flex-shrink:0;">
+                        <span class="badge badge-{{ r.estado }}" style="font-size:.64rem;">{{ STATUS_LABELS[r.estado] }}</span>
+                        <div style="font-size:.7rem; font-weight:700; color:#198754; margin-top:4px;">
+                            {{ r.fecha_remate | dias_restantes }}
+                        </div>
+                        <!-- Puntos de progreso -->
+                        <div class="d-flex gap-1 justify-content-end mt-1">
+                            <span title="Transmisión" style="width:7px;height:7px;border-radius:50%;display:inline-block;background:{{ '#0d6efd' if r.transmision_configurada else '#dee2e6' }};"></span>
+                            <span title="Catálogo"    style="width:7px;height:7px;border-radius:50%;display:inline-block;background:{{ '#fd7e14' if r.catalogo_listo else '#dee2e6' }};"></span>
+                            <span title="Fotos"       style="width:7px;height:7px;border-radius:50%;display:inline-block;background:{{ '#6f42c1' if r.fotos_listas else '#dee2e6' }};"></span>
+                            <span title="Videos"      style="width:7px;height:7px;border-radius:50%;display:inline-block;background:{{ '#e83e8c' if r.videos_listos else '#dee2e6' }};"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+
+    {% endfor %}
+
 {% else %}
-<div class="card">
+<div class="card mt-3">
     <div class="card-body py-5 text-center text-muted">
-        <i class="bi bi-inbox" style="font-size:2.5rem;"></i>
-        <div class="mt-2 fw-500">Sin remates{% if q %} para "{{ q }}"{% elif estado_filtro != 'todos' %} en este estado{% endif %}</div>
-        {% if estado_filtro == 'todos' and not q %}
-        <a href="/remate/nuevo" class="btn btn-success btn-sm mt-3">
-            <i class="bi bi-plus-lg me-1"></i>Crear primer remate
-        </a>
+        <i class="bi bi-inbox" style="font-size:2.5rem; display:block; margin-bottom:10px;"></i>
+        {% if q %}
+            Sin resultados para <strong>"{{ q }}"</strong>
+        {% elif mes_filtro != 'todos' %}
+            Sin remates en {{ MESES[mes_filtro|int] if mes_filtro|int in MESES else mes_filtro }}
+        {% elif estado_filtro != 'todos' %}
+            Sin remates con ese estado
+        {% else %}
+            No hay remates cargados aún
+            {% if current_user.puede_modificar %}
+            <div class="mt-3">
+                <a href="/remate/nuevo" class="btn btn-success btn-sm">
+                    <i class="bi bi-plus-lg me-1"></i>Crear primer remate
+                </a>
+            </div>
+            {% endif %}
         {% endif %}
     </div>
 </div>
 {% endif %}
 
-<div style="height:8px;"></div>
+<div style="height:12px;"></div>
 {% endblock %}
