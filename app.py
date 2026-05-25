@@ -32,7 +32,7 @@ STATUS_LABELS = {
     'cancelado': 'Cancelado',
 }
 ROLES = {'admin': 'Administrador', 'editor': 'Editor', 'viewer': 'Solo lectura'}
-ROLES_PERSONA = ['Transmisor', 'Retransmisor', 'Fotógrafo', 'Camarógrafo', 'Coordinador', 'Otro']
+ROLES_PERSONA = ['Transmisor', 'Retransmisor', 'Fotógrafo', 'Camarógrafo', 'Diseñador', 'Coordinador', 'Otro']
 CATEGORIAS = {
     'hacienda_vacuna': {'label': 'Hacienda Vacuna', 'color': '#198754', 'bg': '#d1e7dd'},
     'hacienda_equina': {'label': 'Hacienda Equina', 'color': '#0d6efd', 'bg': '#cfe2ff'},
