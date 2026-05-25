@@ -1,7 +1,9 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 import sqlite3
 import os
+import hashlib
 from datetime import datetime, timedelta, date
+from functools import wraps
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get('REMATES_DATA_DIR', BASE_DIR)
@@ -28,7 +30,10 @@ STATUS_LABELS = {
     'finalizado': 'Finalizado',
     'cancelado': 'Cancelado',
 }
+ROLES = {'admin': 'Administrador', 'editor': 'Editor', 'viewer': 'Solo lectura'}
 
+
+# ─── DB ──────────────────────────────────────────────────────────────────────
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -36,10 +41,22 @@ def get_db():
     return conn
 
 
+def hash_password(pwd):
+    return hashlib.sha256(pwd.encode()).hexdigest()
+
+
 def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
     with get_db() as db:
         db.executescript('''
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                nombre TEXT NOT NULL,
+                rol TEXT NOT NULL DEFAULT 'viewer'
+            );
+
             CREATE TABLE IF NOT EXISTS remates (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 titulo TEXT NOT NULL,
@@ -71,71 +88,180 @@ def init_db():
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
         ''')
+        # Crear admin por defecto si no hay usuarios
+        existing = db.execute('SELECT COUNT(*) FROM usuarios').fetchone()[0]
+        if existing == 0:
+            db.execute(
+                'INSERT INTO usuarios (username, password, nombre, rol) VALUES (?,?,?,?)',
+                ('admin', hash_password('admin123'), 'Administrador', 'admin')
+            )
+            db.commit()
 
 
-def remate_to_dict(r):
+# ─── Auth helpers ─────────────────────────────────────────────────────────────
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def editor_required(f):
+    """Requiere rol admin o editor para modificar datos."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        if session.get('rol') not in ('admin', 'editor'):
+            flash('No tenés permisos para realizar esa acción.', 'danger')
+            return redirect(url_for('index'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        if session.get('rol') != 'admin':
+            flash('Acceso solo para administradores.', 'danger')
+            return redirect(url_for('index'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def puede_modificar():
+    return session.get('rol') in ('admin', 'editor')
+
+
+# ─── Jinja context ───────────────────────────────────────────────────────────
+
+@app.context_processor
+def inject_user():
     return {
-        'id': r['id'],
-        'titulo': r['titulo'],
-        'fecha_remate': r['fecha_remate'],
-        'lugar': r['lugar'],
-        'establecimiento': r['establecimiento'],
-        'ciudad': r['ciudad'],
-        'provincia': r['provincia'],
-        'transmision_nombre': r['transmision_nombre'],
-        'transmision_plataforma': r['transmision_plataforma'],
-        'transmision_url': r['transmision_url'],
-        'retransmision_nombre': r['retransmision_nombre'],
-        'retransmision_plataforma': r['retransmision_plataforma'],
-        'retransmision_url': r['retransmision_url'],
-        'catalogo_descripcion': r['catalogo_descripcion'],
-        'catalogo_url': r['catalogo_url'],
-        'cantidad_lotes': r['cantidad_lotes'],
-        'fecha_fotos': r['fecha_fotos'],
-        'responsable_fotos': r['responsable_fotos'],
-        'fecha_videos': r['fecha_videos'],
-        'responsable_videos': r['responsable_videos'],
-        'catalogo_listo': bool(r['catalogo_listo']),
-        'fotos_listas': bool(r['fotos_listas']),
-        'videos_listos': bool(r['videos_listos']),
-        'transmision_configurada': bool(r['transmision_configurada']),
-        'estado': r['estado'],
-        'notas': r['notas'],
-        'created_at': r['created_at'],
-        'updated_at': r['updated_at'],
+        'current_user': {
+            'id': session.get('user_id'),
+            'nombre': session.get('nombre', ''),
+            'rol': session.get('rol', ''),
+            'puede_modificar': puede_modificar(),
+        }
     }
 
 
-def get_autocomplete_names():
+# ─── Auth routes ─────────────────────────────────────────────────────────────
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if 'user_id' in session:
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = hash_password(request.form.get('password', ''))
+        with get_db() as db:
+            user = db.execute(
+                'SELECT * FROM usuarios WHERE username=? AND password=?',
+                (username, password)
+            ).fetchone()
+        if user:
+            session['user_id'] = user['id']
+            session['nombre'] = user['nombre']
+            session['rol'] = user['rol']
+            return redirect(url_for('index'))
+        flash('Usuario o contraseña incorrectos.', 'danger')
+    return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+
+# ─── Usuarios (admin) ────────────────────────────────────────────────────────
+
+@app.route('/usuarios')
+@admin_required
+def usuarios():
     with get_db() as db:
-        rows = db.execute(
-            'SELECT transmision_nombre, retransmision_nombre, '
-            'responsable_fotos, responsable_videos FROM remates'
-        ).fetchall()
-    names = set()
-    for row in rows:
-        for val in [row['transmision_nombre'], row['retransmision_nombre'],
-                    row['responsable_fotos'], row['responsable_videos']]:
-            if val:
-                names.add(val.strip())
-    return sorted(names)
+        rows = db.execute('SELECT * FROM usuarios ORDER BY nombre').fetchall()
+    return render_template('usuarios.html', usuarios=rows, ROLES=ROLES, active_page='usuarios')
 
 
-def get_autocomplete_lugares():
+@app.route('/usuario/nuevo', methods=['GET', 'POST'])
+@admin_required
+def nuevo_usuario():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        nombre = request.form.get('nombre', '').strip()
+        rol = request.form.get('rol', 'viewer')
+        if not username or not password or not nombre:
+            flash('Todos los campos son obligatorios.', 'danger')
+            return redirect(url_for('nuevo_usuario'))
+        try:
+            with get_db() as db:
+                db.execute(
+                    'INSERT INTO usuarios (username, password, nombre, rol) VALUES (?,?,?,?)',
+                    (username, hash_password(password), nombre, rol)
+                )
+            flash(f'Usuario "{nombre}" creado correctamente.', 'success')
+            return redirect(url_for('usuarios'))
+        except Exception:
+            flash('El nombre de usuario ya existe.', 'danger')
+    return render_template('usuario_form.html', usuario=None, ROLES=ROLES, active_page='usuarios')
+
+
+@app.route('/usuario/<int:uid>/editar', methods=['GET', 'POST'])
+@admin_required
+def editar_usuario(uid):
     with get_db() as db:
-        rows = db.execute(
-            'SELECT DISTINCT lugar FROM remates WHERE lugar IS NOT NULL AND lugar != ""'
-        ).fetchall()
-    return [r['lugar'] for r in rows]
+        u = db.execute('SELECT * FROM usuarios WHERE id=?', (uid,)).fetchone()
+    if not u:
+        flash('Usuario no encontrado.', 'danger')
+        return redirect(url_for('usuarios'))
+    if request.method == 'POST':
+        nombre = request.form.get('nombre', '').strip()
+        rol = request.form.get('rol', 'viewer')
+        new_pass = request.form.get('password', '').strip()
+        if not nombre:
+            flash('El nombre es obligatorio.', 'danger')
+            return redirect(url_for('editar_usuario', uid=uid))
+        with get_db() as db:
+            if new_pass:
+                db.execute(
+                    'UPDATE usuarios SET nombre=?, rol=?, password=? WHERE id=?',
+                    (nombre, rol, hash_password(new_pass), uid)
+                )
+            else:
+                db.execute('UPDATE usuarios SET nombre=?, rol=? WHERE id=?', (nombre, rol, uid))
+        flash('Usuario actualizado.', 'success')
+        return redirect(url_for('usuarios'))
+    return render_template('usuario_form.html', usuario=u, ROLES=ROLES, active_page='usuarios')
 
 
-# ─── Routes ──────────────────────────────────────────────────────────────────
+@app.route('/usuario/<int:uid>/eliminar', methods=['POST'])
+@admin_required
+def eliminar_usuario(uid):
+    if uid == session.get('user_id'):
+        flash('No podés eliminar tu propio usuario.', 'danger')
+        return redirect(url_for('usuarios'))
+    with get_db() as db:
+        db.execute('DELETE FROM usuarios WHERE id=?', (uid,))
+    flash('Usuario eliminado.', 'success')
+    return redirect(url_for('usuarios'))
+
+
+# ─── App routes ───────────────────────────────────────────────────────────────
 
 @app.route('/')
+@login_required
 def index():
     now = datetime.now()
     hoy = now.date()
-    en_30_dias = hoy + timedelta(days=30)
     with get_db() as db:
         proximos = db.execute(
             "SELECT * FROM remates WHERE estado IN ('programado','en_progreso') "
@@ -156,9 +282,7 @@ def index():
         ).fetchall()
         stats = {}
         for estado in ESTADOS:
-            row = db.execute(
-                'SELECT COUNT(*) as cnt FROM remates WHERE estado=?', (estado,)
-            ).fetchone()
+            row = db.execute('SELECT COUNT(*) as cnt FROM remates WHERE estado=?', (estado,)).fetchone()
             stats[estado] = row['cnt']
         stats['total'] = sum(stats.values())
     return render_template(
@@ -174,22 +298,23 @@ def index():
 
 
 @app.route('/calendario')
+@login_required
 def calendario():
     return render_template('calendario.html', active_page='calendario')
 
 
 @app.route('/api/eventos')
+@login_required
 def api_eventos():
     with get_db() as db:
         rows = db.execute('SELECT * FROM remates ORDER BY fecha_remate').fetchall()
     eventos = []
     for r in rows:
-        fecha = r['fecha_remate']
         color = STATUS_COLORS.get(r['estado'], '#6c757d')
         eventos.append({
             'id': r['id'],
             'title': r['titulo'],
-            'start': fecha,
+            'start': r['fecha_remate'],
             'color': color,
             'url': f'/remate/{r["id"]}',
             'extendedProps': {
@@ -220,6 +345,7 @@ def api_eventos():
 
 
 @app.route('/remates')
+@login_required
 def remates():
     estado_filtro = request.args.get('estado', 'todos')
     q = request.args.get('q', '').strip()
@@ -251,11 +377,12 @@ def remates():
 
 
 @app.route('/remate/nuevo', methods=['GET', 'POST'])
+@editor_required
 def nuevo_remate():
     if request.method == 'POST':
         return _guardar_remate(None)
-    nombres = get_autocomplete_names()
-    lugares = get_autocomplete_lugares()
+    nombres = _get_autocomplete_names()
+    lugares = _get_autocomplete_lugares()
     return render_template(
         'remate_form.html',
         remate=None,
@@ -270,6 +397,7 @@ def nuevo_remate():
 
 
 @app.route('/remate/<int:rid>')
+@login_required
 def ver_remate(rid):
     with get_db() as db:
         r = db.execute('SELECT * FROM remates WHERE id=?', (rid,)).fetchone()
@@ -287,6 +415,7 @@ def ver_remate(rid):
 
 
 @app.route('/remate/<int:rid>/editar', methods=['GET', 'POST'])
+@editor_required
 def editar_remate(rid):
     with get_db() as db:
         r = db.execute('SELECT * FROM remates WHERE id=?', (rid,)).fetchone()
@@ -295,8 +424,8 @@ def editar_remate(rid):
         return redirect(url_for('remates'))
     if request.method == 'POST':
         return _guardar_remate(rid)
-    nombres = get_autocomplete_names()
-    lugares = get_autocomplete_lugares()
+    nombres = _get_autocomplete_names()
+    lugares = _get_autocomplete_lugares()
     return render_template(
         'remate_form.html',
         remate=r,
@@ -310,6 +439,29 @@ def editar_remate(rid):
     )
 
 
+def _get_autocomplete_names():
+    with get_db() as db:
+        rows = db.execute(
+            'SELECT transmision_nombre, retransmision_nombre, '
+            'responsable_fotos, responsable_videos FROM remates'
+        ).fetchall()
+    names = set()
+    for row in rows:
+        for val in [row['transmision_nombre'], row['retransmision_nombre'],
+                    row['responsable_fotos'], row['responsable_videos']]:
+            if val:
+                names.add(val.strip())
+    return sorted(names)
+
+
+def _get_autocomplete_lugares():
+    with get_db() as db:
+        rows = db.execute(
+            'SELECT DISTINCT lugar FROM remates WHERE lugar IS NOT NULL AND lugar != ""'
+        ).fetchall()
+    return [r['lugar'] for r in rows]
+
+
 def _guardar_remate(rid):
     f = request.form
     titulo = f.get('titulo', '').strip()
@@ -320,15 +472,11 @@ def _guardar_remate(rid):
     if not fecha_remate:
         flash('La fecha del remate es obligatoria.', 'danger')
         return redirect(request.referrer or url_for('nuevo_remate'))
-
-    # Combine date + time
     hora = f.get('hora_remate', '').strip()
     if hora:
         fecha_remate = f'{fecha_remate}T{hora}'
-
     cantidad_lotes = f.get('cantidad_lotes', '').strip()
     cantidad_lotes = int(cantidad_lotes) if cantidad_lotes.isdigit() else None
-
     params = (
         titulo,
         fecha_remate,
@@ -353,7 +501,6 @@ def _guardar_remate(rid):
         f.get('notas', '').strip() or None,
         datetime.now().isoformat(),
     )
-
     with get_db() as db:
         if rid is None:
             db.execute(
@@ -387,6 +534,7 @@ def _guardar_remate(rid):
 
 
 @app.route('/remate/<int:rid>/estado', methods=['POST'])
+@editor_required
 def cambiar_estado(rid):
     nuevo = request.form.get('estado')
     if nuevo not in ESTADOS:
@@ -402,6 +550,7 @@ def cambiar_estado(rid):
 
 
 @app.route('/remate/<int:rid>/checklist', methods=['POST'])
+@editor_required
 def actualizar_checklist(rid):
     campo = request.form.get('campo')
     valor = 1 if request.form.get('valor') == '1' else 0
@@ -417,6 +566,7 @@ def actualizar_checklist(rid):
 
 
 @app.route('/remate/<int:rid>/eliminar', methods=['POST'])
+@editor_required
 def eliminar_remate(rid):
     with get_db() as db:
         r = db.execute('SELECT titulo FROM remates WHERE id=?', (rid,)).fetchone()
@@ -428,7 +578,7 @@ def eliminar_remate(rid):
     return redirect(url_for('remates'))
 
 
-# ─── Jinja helpers ───────────────────────────────────────────────────────────
+# ─── Jinja filters ───────────────────────────────────────────────────────────
 
 @app.template_filter('fecha_legible')
 def fecha_legible(value):
@@ -438,7 +588,9 @@ def fecha_legible(value):
         dt = datetime.fromisoformat(value.replace('Z', ''))
         meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun',
                  'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
-        return f'{dt.day} {meses[dt.month - 1]} {dt.year}, {dt.strftime("%H:%M")}' if dt.hour else f'{dt.day} {meses[dt.month - 1]} {dt.year}'
+        if dt.hour or dt.minute:
+            return f'{dt.day} {meses[dt.month-1]} {dt.year}, {dt.strftime("%H:%M")}'
+        return f'{dt.day} {meses[dt.month-1]} {dt.year}'
     except Exception:
         return value
 
@@ -451,7 +603,7 @@ def fecha_corta(value):
         dt = datetime.fromisoformat(value.replace('Z', ''))
         meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun',
                  'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
-        return f'{dt.day} {meses[dt.month - 1]}'
+        return f'{dt.day} {meses[dt.month-1]}'
     except Exception:
         return value
 

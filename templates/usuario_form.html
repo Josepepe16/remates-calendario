@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editar' if usuario else 'Nuevo' }} Usuario{% endblock %}
+
+{% block top_right %}
+<a href="/usuarios" class="text-muted text-decoration-none">
+    <i class="bi bi-x-lg" style="font-size:1.2rem;"></i>
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="page-title mt-3 mb-3">{{ 'Editar Usuario' if usuario else 'Nuevo Usuario' }}</div>
+
+<form method="post" action="{{ '/usuario/' + usuario.id|string + '/editar' if usuario else '/usuario/nuevo' }}">
+    <div class="card mb-3">
+        <div class="card-body px-3 py-3">
+            <div class="mb-3">
+                <label class="form-label">Nombre completo *</label>
+                <input type="text" name="nombre" class="form-control" required
+                       placeholder="Ej: Juan Pérez"
+                       value="{{ usuario.nombre if usuario else '' }}">
+            </div>
+            {% if not usuario %}
+            <div class="mb-3">
+                <label class="form-label">Usuario (login) *</label>
+                <input type="text" name="username" class="form-control" required
+                       placeholder="Ej: juanperez"
+                       autocomplete="off">
+                <div class="form-text">Sin espacios ni caracteres especiales.</div>
+            </div>
+            {% else %}
+            <div class="mb-3">
+                <label class="form-label">Usuario (login)</label>
+                <input type="text" class="form-control" value="{{ usuario.username }}" disabled
+                       style="background:#f8f9fa;">
+            </div>
+            {% endif %}
+            <div class="mb-3">
+                <label class="form-label">{{ 'Nueva contraseña (dejar vacío para no cambiar)' if usuario else 'Contraseña *' }}</label>
+                <input type="password" name="password" class="form-control"
+                       placeholder="Contraseña"
+                       autocomplete="new-password"
+                       {{ 'required' if not usuario else '' }}>
+            </div>
+            <div class="mb-1">
+                <label class="form-label">Rol *</label>
+                <select name="rol" class="form-select">
+                    {% for val, lbl in ROLES.items() %}
+                    <option value="{{ val }}" {{ 'selected' if usuario and usuario.rol == val else ('' if usuario else ('selected' if val == 'viewer' else '')) }}>
+                        {{ lbl }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <div class="form-text mt-1">
+                    <strong>Admin:</strong> todo · <strong>Editor:</strong> crear/editar/eliminar · <strong>Solo lectura:</strong> solo ver
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-success w-100" style="border-radius:14px; padding:13px; font-size:1rem; font-weight:700;">
+        <i class="bi bi-check-lg me-2"></i>Guardar
+    </button>
+</form>
+
+<div style="height:8px;"></div>
+{% endblock %}

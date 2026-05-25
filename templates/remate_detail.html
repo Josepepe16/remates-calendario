@@ -2,9 +2,11 @@
 {% block title %}{{ r.titulo }}{% endblock %}
 
 {% block top_right %}
+{% if current_user.puede_modificar %}
 <a href="/remate/{{ r.id }}/editar" class="btn btn-sm btn-outline-success" style="border-radius:10px; font-size:.8rem;">
     <i class="bi bi-pencil me-1"></i>Editar
 </a>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -46,6 +48,7 @@
         ] %}
         {% for campo, label, icon, color in checks %}
         <div class="d-flex align-items-center gap-3 py-2 border-bottom border-light">
+            {% if current_user.puede_modificar %}
             <button class="check-toggle {{ 'done' if r[campo] else '' }}"
                     onclick="toggleCheck('{{ campo }}', this)"
                     data-rid="{{ r.id }}" data-campo="{{ campo }}"
@@ -53,6 +56,12 @@
                     style="{{ 'background:' + color + ';border-color:' + color if r[campo] else '' }}">
                 {% if r[campo] %}<i class="bi bi-check-lg" style="font-size:.85rem;"></i>{% endif %}
             </button>
+            {% else %}
+            <div class="check-toggle {{ 'done' if r[campo] else '' }}"
+                 style="{{ 'background:' + color + ';border-color:' + color if r[campo] else '' }}; cursor:default;">
+                {% if r[campo] %}<i class="bi bi-check-lg" style="font-size:.85rem;"></i>{% endif %}
+            </div>
+            {% endif %}
             <i class="bi bi-{{ icon }}" style="color:{{ color }}; font-size:1.1rem;"></i>
             <span style="font-size:.9rem; {{ 'text-decoration:line-through;opacity:.5;' if r[campo] else '' }}">{{ label }}</span>
         </div>
@@ -66,6 +75,7 @@
     <div class="card-body px-3 py-3">
         <div class="d-flex gap-2 flex-wrap">
             {% for e in ESTADOS %}
+            {% if current_user.puede_modificar %}
             <form method="post" action="/remate/{{ r.id }}/estado" style="margin:0;">
                 <input type="hidden" name="estado" value="{{ e }}">
                 <button type="submit" class="btn btn-sm {{ 'btn-success' if r.estado == e else 'btn-outline-secondary' }}"
@@ -73,6 +83,12 @@
                     {{ STATUS_LABELS[e] }}
                 </button>
             </form>
+            {% else %}
+            <span class="badge {{ 'badge-' + e }}"
+                  style="font-size:.75rem; padding:7px 14px; border-radius:20px; {{ 'outline:2px solid #198754;' if r.estado == e else 'opacity:.5;' }}">
+                {{ STATUS_LABELS[e] }}
+            </span>
+            {% endif %}
             {% endfor %}
         </div>
     </div>
